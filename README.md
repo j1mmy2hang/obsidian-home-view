@@ -8,7 +8,7 @@ An Obsidian code block for a home page that talks to you, in plain sentences:
 > Today is Thursday, Oct 15, 2026.
 > You have **5h 15min** left for today.
 >
-> You have **2** remaining items to take care of for today.
+> You have **2** remaining items.
 > ○ Problem set 5
 > ○ Read chapter 3
 

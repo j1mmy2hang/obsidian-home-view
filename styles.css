@@ -49,8 +49,13 @@
   margin-top: calc(var(--hv-beat) * 4);
 }
 
+.hv-greeting .hv-name {
+  display: block;
+}
+
 .hv-dials {
   display: flex;
+  justify-content: center;
   gap: calc(var(--hv-beat) * 4);
   margin-top: calc(var(--hv-beat) * 5);
 }
@@ -74,6 +79,8 @@
   }
 
   .hv-greeting { grid-area: greet; }
+  .hv-greeting .hv-name { display: inline; }
+  .hv-dials { justify-content: flex-start; }
   .hv-stanza { grid-area: stanza; }
   .hv-dials { grid-area: dials; align-self: center; }
 

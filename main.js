@@ -114,7 +114,14 @@ class HomeView extends MarkdownRenderChild {
 
     const h = d.getHours();
     const part = h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 18 ? 'afternoon' : 'evening';
-    this.greetEl.setText(`Good ${part}${this.opts.name ? `, ${this.opts.name}` : ''}.`);
+    // The name is its own span so a narrow pane can put it on the second line.
+    this.greetEl.empty();
+    if (this.opts.name) {
+      this.greetEl.appendText(`Good ${part}, `);
+      this.greetEl.createSpan({ cls: 'hv-name', text: `${this.opts.name}.` });
+    } else {
+      this.greetEl.setText(`Good ${part}.`);
+    }
 
     this.nowEl.empty();
     this.nowEl.appendText('It is now ');
@@ -218,7 +225,7 @@ class HomeView extends MarkdownRenderChild {
     }
     p.appendText('You have ');
     p.createSpan({ cls: 'hv-key hv-num', text: String(items.length) });
-    p.appendText(items.length === 1 ? ' remaining item to take care of for today.' : ' remaining items to take care of for today.');
+    p.appendText(items.length === 1 ? ' remaining item.' : ' remaining items.');
 
     // A plain box per item; clicking anywhere on the line opens the note.
     const list = el.createEl('ul', 'hv-list');
