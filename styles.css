@@ -56,7 +56,7 @@
 .hv-dials {
   display: flex;
   justify-content: center;
-  gap: calc(var(--hv-beat) * 4);
+  gap: calc(var(--hv-beat) * 2);
   margin-top: calc(var(--hv-beat) * 5);
 }
 
@@ -194,20 +194,15 @@
 }
 
 .hv-face {
-  fill: color-mix(in srgb, var(--text-normal) 3%, transparent);
+  fill: none;
   stroke: color-mix(in srgb, var(--text-normal) 16%, transparent);
   stroke-width: 1.5;
 }
 
 .hv-tick {
-  stroke: color-mix(in srgb, var(--text-normal) 22%, transparent);
-  stroke-width: 1.5;
+  stroke: color-mix(in srgb, var(--text-normal) 30%, transparent);
+  stroke-width: 2;
   stroke-linecap: round;
-}
-
-.hv-tick.is-major {
-  stroke: color-mix(in srgb, var(--text-normal) 45%, transparent);
-  stroke-width: 2.5;
 }
 
 .hv-hand {
@@ -215,13 +210,11 @@
   stroke-linecap: round;
 }
 
-.hv-hand-h { stroke-width: 4.5; }
-.hv-hand-m { stroke-width: 2.5; }
+.hv-hand-h { stroke-width: 3.5; }
+.hv-hand-m { stroke-width: 2; }
 
 .hv-pin {
   fill: var(--hv-tint);
-  stroke: var(--background-primary);
-  stroke-width: 1.5;
 }
 
 .hv-ring circle {
@@ -261,13 +254,6 @@
   letter-spacing: -0.02em;
 }
 
-.hv-ring-pct {
-  align-self: flex-start;
-  margin-top: calc(var(--hv-dial) * 0.34);
-  margin-left: 1px;
-  font-size: calc(var(--hv-dial) * 0.12);
-  color: var(--text-muted);
-}
 
 .hv-ring-label svg {
   width: calc(var(--hv-dial) * 0.3);

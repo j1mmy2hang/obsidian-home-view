@@ -149,16 +149,15 @@ class HomeView extends MarkdownRenderChild {
     this.setRing(mode, remaining);
   }
 
-  // A plain analog clock: twelve ticks, two hands, a tinted pin.
+  // A bare analog clock: an outline, four quiet marks, two hands, a dot.
   buildClock(el) {
-    const ticks = Array.from({ length: 12 }, (_, i) => {
-      const major = i % 3 === 0;
-      return `<line class="hv-tick${major ? ' is-major' : ''}" x1="50" y1="${major ? 9 : 10}" x2="50" y2="${major ? 16 : 14}" transform="rotate(${i * 30} 50 50)"/>`;
-    }).join('');
-    el.innerHTML = `<svg viewBox="0 0 100 100"><circle class="hv-face" cx="50" cy="50" r="46"/>${ticks}`
-      + '<line class="hv-hand hv-hand-h" x1="50" y1="50" x2="50" y2="28"/>'
-      + '<line class="hv-hand hv-hand-m" x1="50" y1="50" x2="50" y2="17"/>'
-      + '<circle class="hv-pin" cx="50" cy="50" r="3"/></svg>';
+    const marks = [0, 90, 180, 270]
+      .map((deg) => `<line class="hv-tick" x1="50" y1="9" x2="50" y2="14" transform="rotate(${deg} 50 50)"/>`)
+      .join('');
+    el.innerHTML = `<svg viewBox="0 0 100 100"><circle class="hv-face" cx="50" cy="50" r="46"/>${marks}`
+      + '<line class="hv-hand hv-hand-h" x1="50" y1="50" x2="50" y2="29"/>'
+      + '<line class="hv-hand hv-hand-m" x1="50" y1="50" x2="50" y2="15"/>'
+      + '<circle class="hv-pin" cx="50" cy="50" r="2.5"/></svg>';
     this.hourHand = el.querySelector('.hv-hand-h');
     this.minuteHand = el.querySelector('.hv-hand-m');
     this.clockEl = el;
@@ -191,7 +190,6 @@ class HomeView extends MarkdownRenderChild {
     label.empty();
     if (mode === 'day') {
       label.createSpan({ cls: 'hv-ring-num', text: String(pct) });
-      label.createSpan({ cls: 'hv-ring-pct', text: '%' });
       this.ringEl.setAttr('aria-label', `${pct}% of today left`);
     } else {
       setIcon(label, mode === 'dawn' ? 'sun' : 'moon');
