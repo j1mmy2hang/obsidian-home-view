@@ -1,0 +1,273 @@
+/* Home View — a few sentences that talk to you. Plain text, lots of air,
+   the key facts in bold and tinted with DayTime's colour of the hour. */
+
+.home-view {
+  /* Pulled toward the text colour so the tint stays readable in light and dark. */
+  --hv-accent: color-mix(in srgb, var(--hv-tint, #ff8a5c) 72%, var(--text-normal));
+  font-family: var(--font-text);
+  /* One beat of vertical rhythm; every gap below is a whole number of beats. */
+  --hv-beat: 0.6em;
+  font-size: 1.12em;
+  line-height: 1.85;
+  color: var(--text-muted);
+  max-width: 40em;
+  container-type: inline-size;
+  margin-block: 2.5em 3em;
+  animation: hv-fade 0.8s ease both;
+}
+
+.home-view p {
+  margin: 0;
+}
+
+.home-view .hv-greeting {
+  font-size: 1.9em;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--text-normal);
+}
+
+/* Rhythm: greeting ⟶ 4 beats ⟶ stanza ⟶ 5 beats ⟶ items ⟶ 2 beats ⟶ list.
+   Inside the stanza the lines are spaced by line height alone.
+
+   Narrow (phones, split panes): one column — greeting, stanza, the two dials in
+   a row, the items sentence, the list.
+
+   Wide: one grid for the whole widget. The left column holds the prose, sized
+   by the stanza; the right column holds what you look at — the dials, and below
+   them the items, sharing one left edge.
+
+     greet  greet
+     stanza dials
+     say    list                                                        */
+.hv-layout {
+  /* Stacked, the dials are the only pictures on the screen — let them be big. */
+  --hv-dial: clamp(104px, 30cqi, 132px);
+}
+
+.hv-stanza {
+  margin-top: calc(var(--hv-beat) * 4);
+}
+
+.hv-dials {
+  display: flex;
+  gap: calc(var(--hv-beat) * 4);
+  margin-top: calc(var(--hv-beat) * 5);
+}
+
+.hv-items {
+  margin-top: calc(var(--hv-beat) * 5);
+}
+
+@container (min-width: 600px) {
+  .hv-layout {
+    --hv-dial: 92px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "greet greet" "stanza dials" "say list";
+    column-gap: calc(var(--hv-beat) * 7);
+  }
+
+  .hv-head,
+  .hv-items {
+    display: contents;
+  }
+
+  .hv-greeting { grid-area: greet; }
+  .hv-stanza { grid-area: stanza; }
+  .hv-dials { grid-area: dials; align-self: center; }
+
+  .home-view .hv-say {
+    grid-area: say;
+    /* Wrap to the stanza's width instead of widening the column. */
+    width: 0;
+    min-width: 100%;
+  }
+
+  /* Nothing left: the sentence has the whole row. */
+  .home-view .hv-say:only-child {
+    grid-column: 1 / -1;
+    width: auto;
+  }
+
+  .home-view .hv-say,
+  .home-view .hv-layout .hv-list {
+    margin-top: calc(var(--hv-beat) * 7);
+  }
+
+  .home-view .hv-layout .hv-list {
+    grid-area: list;
+  }
+}
+
+.hv-key {
+  color: var(--hv-accent);
+  font-weight: 600;
+  transition: color 1.5s ease;
+}
+
+.hv-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The items: a plain checkbox, the name. */
+.home-view .hv-list {
+  list-style: none;
+  margin: calc(var(--hv-beat) * 2) 0 0;
+  padding: 0;
+}
+
+.home-view .hv-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75em;
+  margin: 0 0 calc(var(--hv-beat) * 1.5);
+  cursor: pointer;
+  outline: none;
+}
+
+.hv-box {
+  flex: none;
+  position: relative;
+  top: 0.12em;
+  width: 0.9em;
+  height: 0.9em;
+  border: 1px solid var(--checkbox-border-color, var(--text-faint));
+  border-radius: var(--checkbox-radius, 4px);
+  transition: border-color 0.2s ease;
+}
+
+.hv-item {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hv-note {
+  display: block;
+  line-height: 1.5;
+  color: var(--text-normal);
+  transition: color 0.2s ease;
+}
+
+.home-view .hv-list li:hover .hv-note,
+.home-view .hv-list li:focus-visible .hv-note {
+  color: var(--hv-accent);
+}
+
+.home-view .hv-list li:hover .hv-box,
+.home-view .hv-list li:focus-visible .hv-box {
+  border-color: var(--hv-accent);
+}
+
+@keyframes hv-fade {
+  from { opacity: 0; transform: translateY(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-view,
+  .home-view * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ───── The two dials: same size, same outer edge, one quiet line weight ───── */
+
+.hv-dial {
+  position: relative;
+  flex: none;
+  width: var(--hv-dial);
+  height: var(--hv-dial);
+}
+
+.hv-dial svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.hv-face {
+  fill: color-mix(in srgb, var(--text-normal) 3%, transparent);
+  stroke: color-mix(in srgb, var(--text-normal) 16%, transparent);
+  stroke-width: 1.5;
+}
+
+.hv-tick {
+  stroke: color-mix(in srgb, var(--text-normal) 22%, transparent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.hv-tick.is-major {
+  stroke: color-mix(in srgb, var(--text-normal) 45%, transparent);
+  stroke-width: 2.5;
+}
+
+.hv-hand {
+  stroke: var(--text-normal);
+  stroke-linecap: round;
+}
+
+.hv-hand-h { stroke-width: 4.5; }
+.hv-hand-m { stroke-width: 2.5; }
+
+.hv-pin {
+  fill: var(--hv-tint);
+  stroke: var(--background-primary);
+  stroke-width: 1.5;
+}
+
+.hv-ring circle {
+  fill: none;
+  stroke-width: 7;
+}
+
+.hv-ring-track {
+  stroke: color-mix(in srgb, var(--hv-tint) 18%, transparent);
+  transition: stroke 1.5s ease;
+}
+
+.hv-ring-fill {
+  stroke: var(--hv-tint);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s cubic-bezier(0.2, 0.8, 0.2, 1), stroke 1.5s ease;
+}
+
+.hv-ring[data-mode="night"] .hv-ring-fill {
+  stroke-linecap: butt;
+}
+
+.hv-ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+.hv-ring-num {
+  font-size: calc(var(--hv-dial) * 0.27);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.hv-ring-pct {
+  align-self: flex-start;
+  margin-top: calc(var(--hv-dial) * 0.34);
+  margin-left: 1px;
+  font-size: calc(var(--hv-dial) * 0.12);
+  color: var(--text-muted);
+}
+
+.hv-ring-label svg {
+  width: calc(var(--hv-dial) * 0.3);
+  height: calc(var(--hv-dial) * 0.3);
+  stroke-width: 1.75;
+}
+
+.hv-ring[data-mode="dawn"] .hv-ring-label { color: #f2b84b; }
+.hv-ring[data-mode="night"] .hv-ring-label { color: color-mix(in srgb, #b8b4ff 70%, var(--text-normal)); }

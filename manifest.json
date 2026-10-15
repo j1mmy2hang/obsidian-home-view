@@ -1,0 +1,9 @@
+{
+  "id": "home-view",
+  "name": "Home View",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "A `home-view` code block: greeting, live clock, a 24-hour day band with sunrise and bedtime, and the notes left in a folder.",
+  "author": "Jimmy Zhang",
+  "isDesktopOnly": false
+}
