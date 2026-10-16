@@ -1,16 +1,21 @@
-const { Plugin, MarkdownRenderChild, TFolder, Keymap, setIcon } = require('obsidian');
+const { Plugin, MarkdownRenderChild, TFolder, Keymap, Notice, Platform, setIcon } = require('obsidian');
 
 // Each can be set by a `key: value` line in the block. Without `lat:` / `lon:`
 // there is no sunrise, so the early-riser message never shows.
 // `sky: off` keeps the note's own background instead of DayTime's sky; the
 // emphasised words then take the colour of the hour instead.
 // `dev: on` adds a corner panel with a time slider, to preview any hour.
+// `reminders: off` leaves Apple Reminders out (they need remindctl, on a Mac).
 const DEFAULTS = {
   name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '',
-  sky: 'on', dev: 'off',
+  sky: 'on', dev: 'off', reminders: 'on',
 };
 const MIN = 60000;
+const DAY = 24 * 60 * MIN;
 let inkIds = 0;
+
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const easeInOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
 
 function parseOptions(source) {
   const opts = { ...DEFAULTS };
@@ -85,6 +90,36 @@ function sky(h, rise, set) {
 const pad = (n) => String(n).padStart(2, '0');
 const duration = (min) => (Math.floor(min / 60) ? `${Math.floor(min / 60)}h ${min % 60}min` : `${min}min`);
 const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const plural = (n, word) => `${word}${n === 1 ? '' : 's'}`;
+
+// A reminder's due date as a pill: the time if it is today ("16:30"), else
+// "Yesterday" or the date ("Oct 14"), with the time after it when it has one.
+// Reminders reports a date without a time as local midnight.
+function dueLabel(iso, today) {
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  const timed = d.getHours() || d.getMinutes();
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const days = Math.round((new Date(today).setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / DAY);
+  const overdue = days > 0 || (days === 0 && timed && d < today);
+  const day = days === 0 ? 'Today' : days === 1 ? 'Yesterday' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const text = days === 0 ? (timed ? time : day) : timed ? `${day} ${time}` : day;
+  return { text, overdue };
+}
+
+// Apple Reminders, through remindctl (github.com/openclaw/remindctl). Obsidian
+// starts without the shell's PATH, so look where Homebrew puts it.
+const REMINDCTL = ['/opt/homebrew/bin/remindctl', '/usr/local/bin/remindctl'];
+function remindctl(...args) {
+  if (!Platform.isMacOS || !Platform.isDesktopApp) return null;
+  const fs = require('fs');
+  const bin = REMINDCTL.find((p) => fs.existsSync(p));
+  if (!bin) return null;
+  return new Promise((resolve, reject) => {
+    require('child_process').execFile(bin, [...args, '--json', '--no-input'], { timeout: 15000 },
+      (err, out) => (err ? reject(err) : resolve(out)));
+  });
+}
 
 class HomeView extends MarkdownRenderChild {
   constructor(plugin, el, opts, sourcePath) {
@@ -119,8 +154,10 @@ class HomeView extends MarkdownRenderChild {
     this.buildRing(dials.createDiv({ cls: 'hv-dial hv-ring', attr: { role: 'img' } }));
     this.itemsEl = layout.createDiv('hv-items');
 
+    this.reminders = [];
     this.tick();
     this.renderItems();
+    this.loadReminders();
 
     // Wake on each minute boundary, then every minute after it.
     const t = window.setTimeout(() => {
@@ -128,6 +165,13 @@ class HomeView extends MarkdownRenderChild {
       this.registerInterval(window.setInterval(() => this.tick(), MIN));
     }, MIN - (Date.now() % MIN) + 50);
     this.register(() => window.clearTimeout(t));
+    // Catch up as soon as the page is seen again: back to the app, back to the
+    // tab, or the screen woken up.
+    const catchUp = () => this.tick();
+    this.registerDomEvent(window, 'focus', catchUp);
+    this.registerDomEvent(document, 'visibilitychange', catchUp);
+    this.registerEvent(this.app.workspace.on('active-leaf-change', catchUp));
+    this.registerEvent(this.app.workspace.on('layout-change', catchUp));
 
     const prefix = this.opts.folder.replace(/\/?$/, '/');
     const inFolder = (path) => typeof path === 'string' && path.startsWith(prefix);
@@ -137,14 +181,52 @@ class HomeView extends MarkdownRenderChild {
     this.registerEvent(this.app.vault.on('rename', refresh));
     this.registerEvent(this.app.metadataCache.on('changed', refresh));
 
+    // Reminders change in other apps, so look again whenever the page comes
+    // back into view, and every five minutes.
+    this.registerDomEvent(window, 'focus', () => this.loadReminders());
+    this.registerDomEvent(document, 'visibilitychange', () => { if (!document.hidden) this.loadReminders(); });
+    this.registerInterval(window.setInterval(() => this.loadReminders(), 5 * MIN));
   }
 
-  tick() {
+  // Bring the widget to the current minute. It doesn't jump there: from the
+  // time it last showed it winds through the minutes in between, so after an
+  // hour away the hands sweep, the numbers count and the sky shifts into place.
+  // While the page can't be seen it waits, so the catch-up plays in view.
+  // The dev slider asks for `instant`.
+  tick(instant = false) {
     const real = new Date();
     const dev = this.pane?.hvDev;
-    const d = dev?.time == null ? real
+    const target = dev?.time == null ? real
       : new Date(real.getFullYear(), real.getMonth(), real.getDate(), Math.floor(dev.time / 60), dev.time % 60);
-    const now = d.getHours() * 60 + d.getMinutes();
+    target.setSeconds(0, 0);
+    const to = target.getTime(), from = this.shownAt;
+    if (from == null || instant) return this.show(to);
+    if (from === to || document.hidden || !this.containerEl.isShown()) return;
+    if (Math.abs(to - from) > DAY || reducedMotion()) return this.show(to);
+
+    // Longer gaps take a little longer, up to a second and a half.
+    const ms = Math.min(350 + 220 * Math.log2(1 + Math.abs(to - from) / MIN), 1500);
+    let start = null;
+    const step = (t) => {
+      start ??= t;
+      const p = Math.min((t - start) / ms, 1);
+      this.anim = p < 1 ? requestAnimationFrame(step) : 0;
+      this.render(new Date(from + (to - from) * easeInOut(p)));
+    };
+    if (this.anim) cancelAnimationFrame(this.anim);
+    this.anim = requestAnimationFrame(step);
+  }
+
+  show(ms) {
+    if (this.anim) cancelAnimationFrame(this.anim);
+    this.anim = 0;
+    this.render(new Date(ms));
+  }
+
+  // Draw the widget at moment `d`, which mid-animation falls between minutes.
+  render(d) {
+    this.shownAt = d.getTime();
+    const now = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60 + d.getMilliseconds() / MIN;
     if (dateKey(d) !== this.day) {
       this.day = dateKey(d);
       const lat = parseFloat(this.opts.lat), lon = parseFloat(this.opts.lon);
@@ -152,7 +234,7 @@ class HomeView extends MarkdownRenderChild {
       this.rise = sun?.rise ?? this.wake;
       // Without a location the sky assumes a 6:30 sunrise and a 19:30 sunset.
       this.sun = sun ?? { rise: 390, set: 1170 };
-      if (this.itemsEl.childElementCount) this.renderItems();
+      if (this.itemsEl.childElementCount) { this.renderItems(); this.loadReminders(); }
     }
     const remaining = Math.min(Math.max((this.bed - now) / (this.bed - this.wake), 0), 1);
     this.paint(now);
@@ -179,7 +261,7 @@ class HomeView extends MarkdownRenderChild {
     const mode = now >= this.wake && now < this.bed ? 'day' : now >= this.rise && now < this.wake ? 'dawn' : 'night';
     if (mode === 'day') {
       s.appendText('You have ');
-      s.createSpan({ cls: 'hv-key hv-num', text: duration(this.bed - now) });
+      s.createSpan({ cls: 'hv-key hv-num', text: duration(this.bed - Math.floor(now)) });
       s.appendText(' left for today.');
     } else if (mode === 'dawn') {
       s.createSpan({ cls: 'hv-key', text: 'Congratulations' });
@@ -209,10 +291,10 @@ class HomeView extends MarkdownRenderChild {
   }
 
   setClock(d) {
-    const m = d.getMinutes();
+    const m = d.getMinutes() + d.getSeconds() / 60 + d.getMilliseconds() / MIN;
     this.hourHand.setAttribute('transform', `rotate(${(d.getHours() % 12) * 30 + m / 2} 50 50)`);
     this.minuteHand.setAttribute('transform', `rotate(${m * 6} 50 50)`);
-    this.clockEl.setAttr('aria-label', `Clock showing ${pad(d.getHours())}:${pad(m)}`);
+    this.clockEl.setAttr('aria-label', `Clock showing ${pad(d.getHours())}:${pad(d.getMinutes())}`);
   }
 
   // DayTime's ring: the percent of the waking day left, 100 at wake-up and 1 just
@@ -236,7 +318,9 @@ class HomeView extends MarkdownRenderChild {
 
   setRing(mode, remaining) {
     const pct = mode === 'day' ? Math.min(Math.max(Math.ceil(remaining * 100 - 1e-9), 1), 100) : mode === 'dawn' ? 100 : 0;
-    this.ringFill.style.strokeDashoffset = String(this.circumference * (1 - pct / 100));
+    // The arc follows the exact fraction, so it drains smoothly under the whole-number label.
+    const fill = mode === 'day' ? Math.max(remaining, 0.01) : mode === 'dawn' ? 1 : 0;
+    this.ringFill.style.strokeDashoffset = String(this.circumference * (1 - fill));
     this.ringEl.dataset.mode = mode;
     const label = this.ringLabel;
     label.empty();
@@ -263,7 +347,7 @@ class HomeView extends MarkdownRenderChild {
     const pane = root.closest('.workspace-leaf-content');
     if (!pane) {
       // Not in the document yet on the first render; try again next frame.
-      if (!this.paneRetry) this.paneRetry = requestAnimationFrame(() => { this.paneRetry = 0; this.tick(); });
+      if (!this.paneRetry) this.paneRetry = requestAnimationFrame(() => { this.paneRetry = 0; this.show(this.shownAt); });
       return;
     }
     // Re-applied on every paint, not just the first: while re-rendering, Live
@@ -294,7 +378,7 @@ class HomeView extends MarkdownRenderChild {
       const value = r.createSpan('hv-dev-value');
       return { input, value };
     };
-    const redraw = () => pane.hvOwner?.tick();
+    const redraw = () => pane.hvOwner?.tick(true);
 
     const time = row('Time');
     time.input.min = '0'; time.input.max = '1435'; time.input.step = '5';
@@ -329,7 +413,9 @@ class HomeView extends MarkdownRenderChild {
   }
 
   onunload() {
+    this.gone = true;
     if (this.paneRetry) cancelAnimationFrame(this.paneRetry);
+    if (this.anim) cancelAnimationFrame(this.anim);
     const pane = this.pane;
     // Live Preview re-renders the block often; only the newest one cleans up.
     if (!pane || pane.hvOwner !== this) return;
@@ -355,21 +441,84 @@ class HomeView extends MarkdownRenderChild {
     }).sort((a, b) => a.sortKey.localeCompare(b.sortKey) || a.file.basename.localeCompare(b.file.basename));
   }
 
+  // Incomplete reminders that are overdue or due today, as in Reminders' Today
+  // list, plus any just ticked that are still fading out.
+  async loadReminders() {
+    if (this.opts.reminders === 'off') return;
+    try {
+      const outs = await Promise.all([remindctl('show', 'overdue'), remindctl('show', 'today')]);
+      if (outs.includes(null)) return;
+      // A reminder due earlier today can be in both.
+      const fetched = [...new Map(outs.flatMap((o) => JSON.parse(o)).map((r) => [r.id, r])).values()];
+      const leaving = this.reminders.filter((r) => r.isCompleted && r.leave);
+      this.reminders = fetched.filter((r) => !r.isCompleted && !leaving.some((x) => x.id === r.id))
+        .concat(leaving)
+        .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
+    } catch (err) {
+      console.warn('Home View: could not read Apple Reminders', err);
+      return;
+    }
+    if (!this.gone) this.renderItems();
+  }
+
+  // Tick or untick in Apple Reminders. The line flips at once and flips back
+  // if Reminders refuses. A ticked line stays struck through for a moment, so
+  // it can still be unticked, then fades out of the list.
+  async toggleReminder(r) {
+    this.setDone(r, !r.isCompleted);
+    try {
+      await remindctl('edit', r.id, r.isCompleted ? '--complete' : '--incomplete');
+    } catch (err) {
+      console.warn('Home View: could not update the reminder', err);
+      new Notice(`Could not update "${r.title}" in Reminders.`);
+      this.setDone(r, !r.isCompleted);
+    }
+  }
+
+  // Flip the line where it stands rather than rebuilding the list, so the
+  // box and the strike-through animate.
+  setDone(r, done) {
+    r.isCompleted = done;
+    const li = this.itemsEl.querySelector(`[data-id="${r.id}"]`);
+    li?.toggleClass('is-done', done);
+    li?.setAttr('aria-checked', String(done));
+    this.renderSay();
+    this.scheduleLeave(r);
+  }
+
+  scheduleLeave(r) {
+    window.clearTimeout(r.leave);
+    if (!r.isCompleted) return;
+    r.leave = window.setTimeout(() => {
+      if (this.gone) return;
+      const remove = () => {
+        if (this.gone) return;
+        this.reminders = this.reminders.filter((x) => x !== r);
+        this.renderItems();
+      };
+      const li = this.itemsEl.querySelector(`[data-id="${r.id}"]`);
+      if (!li || reducedMotion()) return remove();
+      // Fade the line, then fold its height to nothing so the lines below
+      // slide up instead of jumping. Height can't animate from auto, so pin
+      // it to its measured size first.
+      li.style.height = `${li.offsetHeight}px`;
+      void li.offsetHeight;
+      li.addClass('is-leaving');
+      li.style.height = '0px';
+      r.leave = window.setTimeout(remove, 480);
+    }, 600);
+  }
+
   renderItems() {
     const el = this.itemsEl;
     el.empty();
     const items = this.files();
-    const p = el.createEl('p', 'hv-say');
-    if (!items.length) {
-      p.createSpan({ cls: 'hv-key', text: 'Congratulations' });
-      p.appendText(', you are all clear for today.');
-      return;
-    }
-    p.appendText('You have ');
-    p.createSpan({ cls: 'hv-key hv-num', text: String(items.length) });
-    p.appendText(items.length === 1 ? ' remaining item.' : ' remaining items.');
+    const reminders = this.reminders;
+    this.sayEl = el.createEl('p', 'hv-say');
+    this.renderSay(items);
+    if (!items.length && !reminders.length) return;
 
-    // A plain box per item; clicking anywhere on the line opens the note.
+    // A plain box per todo; clicking anywhere on the line opens the note.
     const list = el.createEl('ul', 'hv-list');
     items.forEach(({ file }) => {
       const li = list.createEl('li', { attr: { role: 'link', tabindex: '0' } });
@@ -380,6 +529,47 @@ class HomeView extends MarkdownRenderChild {
       li.addEventListener('click', open);
       li.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(e); });
     });
+    // A round box per reminder, as in Reminders; clicking the line ticks it.
+    reminders.forEach((r) => {
+      const li = list.createEl('li', {
+        cls: r.isCompleted ? 'hv-reminder is-done' : 'hv-reminder',
+        attr: { role: 'checkbox', tabindex: '0', 'aria-checked': String(!!r.isCompleted), 'data-id': r.id },
+      });
+      li.createSpan({ cls: 'hv-box', attr: { 'aria-hidden': 'true' } });
+      const body = li.createSpan('hv-item');
+      body.createSpan({ cls: 'hv-note', text: r.title });
+      const due = dueLabel(r.dueDate, new Date());
+      if (due) body.createSpan({ cls: due.overdue ? 'hv-due is-overdue' : 'hv-due', text: due.text });
+      li.addEventListener('click', () => this.toggleReminder(r));
+      li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.toggleReminder(r); } });
+    });
+  }
+
+  // The sentence above the list. Ticking a reminder redraws only this.
+  renderSay(items = this.files()) {
+    const p = this.sayEl;
+    p.empty();
+    const reminders = this.reminders;
+    const left = reminders.filter((r) => !r.isCompleted).length;
+    if (!items.length && !left) {
+      p.createSpan({ cls: 'hv-key', text: 'Congratulations' });
+      p.appendText(', you are all clear for today.');
+    } else {
+      // With reminders too, each part gets its own line.
+      const both = reminders.length > 0;
+      p.appendText('You have');
+      if (both) p.createEl('br');
+      p.appendText(both ? '' : ' ');
+      p.createSpan({ cls: 'hv-key hv-num', text: String(items.length) });
+      p.appendText(` remaining ${plural(items.length, 'todo')}`);
+      if (both) {
+        p.appendText(',');
+        p.createEl('br');
+        p.createSpan({ cls: 'hv-key hv-num', text: String(left) });
+        p.appendText(` ${plural(left, 'reminder')}`);
+      }
+      p.appendText('.');
+    }
   }
 }
 

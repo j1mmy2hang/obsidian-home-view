@@ -8,9 +8,12 @@ An Obsidian code block for a home page that talks to you, in plain sentences:
 > Today is Thursday, Oct 15, 2026.
 > You have **5h 15min** left for today.
 >
-> You have **2** remaining items.
+> You have
+> **2** remaining todos,
+> **1** reminder.
 > ○ Problem set 5
 > ○ Read chapter 3
+> ○ Do laundry `16:30`
 
 Beside the text sit two dials: a small analog clock, and a ring showing the
 percent of your waking day that is left. Behind it all, the pane takes the colour
@@ -29,6 +32,12 @@ sun, blended minute by minute.
 - **Items.** Every file in `folder` (and its subfolders), soonest `due date`
   property first. Click a line to open the note; Cmd/Ctrl-click opens it in a new tab.
   When the folder is empty, it says you are all clear.
+- **Apple Reminders (macOS).** Reminders that are overdue or due today follow the
+  todos, each with its due date in a small pill (red once past). Click one to mark
+  it done in Reminders; it is struck through, then slides out of the list. Needs
+  [remindctl](https://github.com/openclaw/remindctl) (`brew install steipete/tap/remindctl`)
+  and Reminders access for Obsidian. Not available on iOS or Android, where plugins
+  cannot reach Reminders.
 - **Layout.** On a wide pane: prose on the left, dials and items on the right.
   On a phone or narrow pane everything stacks.
 - Updates on every minute, and whenever a note enters, leaves or changes in `folder`.
@@ -47,6 +56,7 @@ lat:
 lon:
 sky: on
 dev: off
+reminders: on
 ```
 ````
 
@@ -58,7 +68,8 @@ Without a location it assumes sunrise at 6:30 and sunset at 19:30. `sky: off`
 keeps the note's normal background; the emphasised words and the ring then take
 the sky's colour of the hour instead.
 
-`dev: on` adds a corner time slider to preview any hour.
+`dev: on` adds a corner time slider to preview any hour. `reminders: off` leaves
+Apple Reminders out.
 
 ## Install
 

@@ -27,11 +27,13 @@
   color: var(--text-normal);
 }
 
-/* Rhythm: greeting ⟶ 4 beats ⟶ stanza ⟶ 5 beats ⟶ items ⟶ 2 beats ⟶ list.
+/* Rhythm: greeting ⟶ 5 beats ⟶ stanza ⟶ 5 beats ⟶ items ⟶ 2 beats ⟶ list.
    Inside the stanza the lines are spaced by line height alone.
 
    Narrow (phones, split panes): one column — greeting, stanza, the two dials in
-   a row, the items sentence, the list.
+   a row, the items sentence, the list. The column is as wide as its text, so
+   the dials centre between the text's own left and right edges, and the
+   column itself is centred on the page.
 
    Wide: one grid for the whole widget. The left column holds the prose, sized
    by the stanza; the right column holds what you look at — the dials, and below
@@ -41,12 +43,22 @@
      stanza dials
      say    list                                                        */
 .hv-layout {
-  /* Stacked, the dials are the only pictures on the screen — let them be big. */
-  --hv-dial: clamp(104px, 30cqi, 132px);
+  /* The dials keep one size in both layouts. */
+  --hv-dial: 92px;
+  width: fit-content;
+  max-width: 100%;
+  /* Stacked, the column sits in the middle of the page; its text stays left-aligned. */
+  margin-inline: auto;
+}
+
+/* On a phone the column takes the full width, so the dials centre on the screen. */
+.is-phone .hv-layout {
+  width: auto;
+  margin-inline: 0;
 }
 
 .hv-stanza {
-  margin-top: calc(var(--hv-beat) * 4);
+  margin-top: calc(var(--hv-beat) * 5);
 }
 
 .hv-greeting .hv-name {
@@ -66,7 +78,7 @@
 
 @container (min-width: 600px) {
   .hv-layout {
-    --hv-dial: 92px;
+    width: auto;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas: "greet greet" "stanza dials" "say list";
@@ -99,7 +111,7 @@
 
   .home-view .hv-say,
   .home-view .hv-layout .hv-list {
-    margin-top: calc(var(--hv-beat) * 7);
+    margin-top: calc(var(--hv-beat) * 5);
   }
 
   .home-view .hv-layout .hv-list {
@@ -121,7 +133,7 @@
    Without the sky on the pane, the emphasised words take the sky's colour of
    the hour instead — deep blue at night, salmon at sunrise, blue at noon,
    amber in the gold hour, coral at sunset. The ring runs from it to a second
-   colour. Registered so the colours glide instead of jumping. */
+   colour. main.js animates them along with the time, so no CSS transition. */
 
 @property --hv-tint {
   syntax: "<color>";
@@ -133,10 +145,6 @@
   syntax: "<color>";
   inherits: true;
   initial-value: #ff8a5c;
-}
-
-.home-view[data-sky="off"] {
-  transition: --hv-tint 0.8s ease, --hv-glow 0.8s ease;
 }
 
 .home-view[data-sky="off"] .hv-ring-fill {
@@ -159,6 +167,10 @@
   align-items: baseline;
   gap: 0.75em;
   margin: 0;
+  /* A wrapped title keeps its lines closer than the items are to each other:
+     tighter leading, and padding that keeps a one-line item 36px as before. */
+  line-height: 1.4;
+  padding: 0.3em 0;
   cursor: pointer;
   outline: none;
 }
@@ -193,6 +205,75 @@
 .home-view .hv-list li:hover .hv-box,
 .home-view .hv-list li:focus-visible .hv-box {
   border-color: var(--hv-accent);
+}
+
+/* Reminders: a round box, as in Apple Reminders. Ticked, the box fills with
+   the accent in a small pop, a line draws through the title from the left,
+   and the title dims; a moment later the line fades and folds shut. */
+.hv-reminder .hv-box {
+  border-radius: 50%;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hv-reminder.is-done .hv-box {
+  border-color: var(--hv-accent);
+  background-color: var(--hv-accent);
+  box-shadow: inset 0 0 0 2px var(--background-primary);
+  animation: hv-pop 0.3s cubic-bezier(0.3, 1.5, 0.6, 1);
+}
+
+@keyframes hv-pop {
+  50% { transform: scale(1.2); }
+}
+
+/* The strike-through is a 1px background line, so it can grow across. */
+.hv-reminder .hv-note {
+  display: inline;
+  background: linear-gradient(currentColor, currentColor) no-repeat 0 55% / 0 1px;
+  transition: color 0.3s ease, background-size 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hv-reminder.is-done .hv-note {
+  color: var(--text-faint);
+  background-size: 100% 1px;
+}
+
+/* The due date, in a small pill after the title; red once it has passed. */
+.hv-due {
+  display: inline-block;
+  margin-left: 0.6em;
+  padding: 0 0.6em;
+  border-radius: 999px;
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: 0.72em;
+  line-height: 1.7;
+  vertical-align: 0.12em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.3s ease;
+}
+
+.hv-due.is-overdue {
+  background-color: rgba(var(--color-red-rgb), 0.14);
+  color: var(--color-red);
+}
+
+.hv-reminder.is-done .hv-due {
+  opacity: 0.5;
+}
+
+/* Leaving: the line fades, and as it fades it folds shut, so the lines below
+   glide up into its place. main.js pins the height before folding it. */
+.hv-reminder.is-leaving {
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity 0.3s ease,
+    height 0.42s cubic-bezier(0.32, 0.72, 0, 1) 0.05s,
+    padding 0.42s cubic-bezier(0.32, 0.72, 0, 1) 0.05s;
 }
 
 @keyframes hv-fade {
@@ -260,7 +341,7 @@
 .hv-ring-fill {
   stroke: var(--hv-tint);
   stroke-linecap: round;
-  transition: stroke-dashoffset 1s cubic-bezier(0.2, 0.8, 0.2, 1), stroke 1.5s ease;
+  transition: stroke 1.5s ease;
 }
 
 .hv-ring[data-mode="night"] .hv-ring-fill {
