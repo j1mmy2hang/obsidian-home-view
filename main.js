@@ -10,6 +10,15 @@ const DEFAULTS = {
 };
 const MIN = 60000;
 
+function parseOptions(source) {
+  const opts = { ...DEFAULTS };
+  for (const line of source.split('\n')) {
+    const m = line.match(/^\s*(\w+)\s*:\s*(.+?)\s*$/);
+    if (m && m[1] in DEFAULTS) opts[m[1]] = m[2];
+  }
+  return opts;
+}
+
 // Minutes after local midnight for "H:MM".
 function clockMinutes(s) {
   const [h, m = 0] = s.split(':').map(Number);
