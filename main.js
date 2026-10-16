@@ -326,12 +326,14 @@ class HomeView extends MarkdownRenderChild {
   // moves Obsidian's glass tint off the window root (styles.css). Otherwise
   // everything is exactly as Obsidian left it.
   updateGlass() {
-    const pane = this.pane;
-    if (!pane || pane.hvOwner !== this) return;
-    const onScreen = pane.isConnected && pane.offsetParent !== null;
-    const glass = onScreen && document.body.hasClass('is-translucent') && this.alpha() < 1;
+    // One decision for the whole window, whichever home page asks: several Home
+    // tabs may exist, and a hidden one must not switch off the visible one's glass.
+    const shown = [...document.querySelectorAll('.workspace-leaf-content.hv-sky')]
+      .map((p) => p.hvOwner)
+      .find((o) => o && o.pane.isConnected && o.pane.offsetParent !== null);
+    const glass = !!shown && document.body.hasClass('is-translucent') && shown.alpha() < 1;
     document.body.toggleClass('hv-see-through', glass);
-    if (glass) windowGlass.set(this.material());
+    if (glass) windowGlass.set(shown.material());
     else windowGlass.restore();
   }
 
@@ -409,8 +411,7 @@ class HomeView extends MarkdownRenderChild {
     pane.querySelector(':scope > .hv-dev')?.remove();
     delete pane.hvDev;
     for (const k of ['--hv-sky-top', '--hv-sky-mid', '--hv-sky-bottom', '--hv-stars', '--hv-sky-alpha']) pane.style.removeProperty(k);
-    document.body.removeClass('hv-see-through');
-    windowGlass.restore();
+    this.updateGlass();
     delete pane.hvOwner;
   }
 

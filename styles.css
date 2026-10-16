@@ -268,6 +268,11 @@
 
 .workspace-leaf-content.hv-sky {
   isolation: isolate;
+  /* Same top corners as the other notes, if a theme or snippet rounds them
+     with --note-area-radius; square otherwise. Clips the stars too. */
+  border-top-left-radius: var(--note-area-radius, 0);
+  border-top-right-radius: var(--note-area-radius, 0);
+  overflow: clip;
   /* --hv-sky-alpha below 1 lets the window glass show through the sky. */
   --hv-a: calc(var(--hv-sky-alpha, 1) * 100%);
   background: linear-gradient(180deg,
