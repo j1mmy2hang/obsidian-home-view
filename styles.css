@@ -273,12 +273,7 @@
   border-top-left-radius: var(--note-area-radius, 0);
   border-top-right-radius: var(--note-area-radius, 0);
   overflow: clip;
-  /* --hv-sky-alpha below 1 lets the window glass show through the sky. */
-  --hv-a: calc(var(--hv-sky-alpha, 1) * 100%);
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--hv-sky-top) var(--hv-a), transparent),
-    color-mix(in srgb, var(--hv-sky-mid) var(--hv-a), transparent) 55%,
-    color-mix(in srgb, var(--hv-sky-bottom) var(--hv-a), transparent)) !important;
+  background: linear-gradient(180deg, var(--hv-sky-top), var(--hv-sky-mid) 55%, var(--hv-sky-bottom)) !important;
 }
 
 /* Everything in the pane lets the sky through. */
@@ -385,30 +380,3 @@
   font-size: 11px;
 }
 
-/* ───── See-through (body.hv-see-through, set only while the home page is on
-   screen with a translucent sky) ─────
-   Obsidian paints its glass tint once, on .app-container, under the whole
-   window, so nothing can see past it. Move that tint onto every region beside
-   the home page instead: they look the same, and the home pane alone has
-   nothing between its sky and the window's glass. */
-body.is-translucent.hv-see-through .app-container {
-  background-color: transparent !important;
-}
-
-body.is-translucent.hv-see-through .app-container :is(
-  .workspace-ribbon,
-  .workspace-split.mod-left-split,
-  .workspace-split.mod-right-split,
-  .mod-root .workspace-tabs:not(:has(.hv-sky)),
-  .mod-root .workspace-tabs:has(.hv-sky) > .workspace-tab-header-container
-),
-body.is-translucent.hv-see-through .app-container > .status-bar {
-  background-color: var(--workspace-background-translucent) !important;
-}
-
-.hv-dev select {
-  grid-column: 2 / -1;
-  height: auto;
-  padding: 2px 8px;
-  font-size: 12px;
-}

@@ -46,8 +46,6 @@ bed: 23:00
 lat:
 lon:
 sky: on
-opacity: 1
-material: sidebar
 dev: off
 ```
 ````
@@ -59,14 +57,7 @@ gold before sunset, coral at sunset, then dusk and night — whatever your bedti
 Without a location it assumes sunrise at 6:30 and sunset at 19:30. `sky: off`
 keeps the note's normal background.
 
-**See-through (macOS, with Obsidian's "Translucent window" on).** `opacity` below 1
-lets the desktop show through the sky, and `material` picks the macOS blur behind
-it: `sidebar` (Obsidian's own), `under-window`, `fullscreen-ui`, `hud`, `window`,
-`popover`, `menu`, `header`, or `none`. Both apply only while the home page is on
-screen; leave it and the window is exactly as Obsidian made it. The material
-covers the whole window, so the sidebars' glass changes with it while you're home.
-
-`dev: on` adds a corner panel to preview any hour, opacity and material live.
+`dev: on` adds a corner time slider to preview any hour.
 
 ## Install
 
