@@ -311,8 +311,10 @@ class HomeView extends MarkdownRenderChild {
     pane.style.setProperty('--hv-stars', s.stars.toFixed(2));
   }
 
+  // Sky opacity, 0–1. The option also takes a percentage: `opacity: 10` = 0.1.
   alpha() {
-    const a = this.pane?.hvDev?.alpha ?? parseFloat(this.opts.opacity);
+    let a = this.pane?.hvDev?.alpha ?? parseFloat(this.opts.opacity);
+    if (a > 1) a /= 100;
     return isNaN(a) ? 1 : Math.min(Math.max(a, 0), 1);
   }
 
