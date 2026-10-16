@@ -3,7 +3,7 @@
 
 .home-view {
   /* Pulled toward the text colour so the tint stays readable in light and dark. */
-  --hv-accent: color-mix(in srgb, var(--hv-tint, #ff8a5c) 72%, var(--text-normal));
+  --hv-accent: color-mix(in srgb, var(--hv-tint) 84%, var(--text-normal));
   font-family: var(--font-text);
   /* One beat of vertical rhythm; every gap below is a whole number of beats. */
   --hv-beat: 0.6em;
@@ -115,6 +115,36 @@
 
 .hv-num {
   font-variant-numeric: tabular-nums;
+}
+
+/* ───── The colour of the hour (sky: off) ─────
+   Without the sky on the pane, the emphasised words take the sky's colour of
+   the hour instead — deep blue at night, salmon at sunrise, blue at noon,
+   amber in the gold hour, coral at sunset. The ring runs from it to a second
+   colour. Registered so the colours glide instead of jumping. */
+
+@property --hv-tint {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ff8a5c;
+}
+
+@property --hv-glow {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ff8a5c;
+}
+
+.home-view[data-sky="off"] {
+  transition: --hv-tint 0.8s ease, --hv-glow 0.8s ease;
+}
+
+.home-view[data-sky="off"] .hv-ring-fill {
+  stroke: var(--hv-ring-ink);
+}
+
+.home-view[data-sky="off"] .hv-ring[data-mode] .hv-ring-label {
+  color: var(--hv-accent);
 }
 
 /* The items: a plain checkbox, the name. */

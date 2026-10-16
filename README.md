@@ -55,7 +55,8 @@ used to compute today's sunrise and sunset; without them the
 early-riser message never shows. The sky follows the real sun: dawn at sunrise,
 gold before sunset, coral at sunset, then dusk and night — whatever your bedtime.
 Without a location it assumes sunrise at 6:30 and sunset at 19:30. `sky: off`
-keeps the note's normal background.
+keeps the note's normal background; the emphasised words and the ring then take
+the sky's colour of the hour instead.
 
 `dev: on` adds a corner time slider to preview any hour.
 

@@ -2,13 +2,15 @@ const { Plugin, MarkdownRenderChild, TFolder, Keymap, setIcon } = require('obsid
 
 // Each can be set by a `key: value` line in the block. Without `lat:` / `lon:`
 // there is no sunrise, so the early-riser message never shows.
-// `sky: off` keeps the note's own background instead of DayTime's sky.
+// `sky: off` keeps the note's own background instead of DayTime's sky; the
+// emphasised words then take the colour of the hour instead.
 // `dev: on` adds a corner panel with a time slider, to preview any hour.
 const DEFAULTS = {
   name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '',
   sky: 'on', dev: 'off',
 };
 const MIN = 60000;
+let inkIds = 0;
 
 function parseOptions(source) {
   const opts = { ...DEFAULTS };
@@ -47,40 +49,37 @@ function sunTimes(day, lat, lon) {
 
 const rgb = (hex) => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const css = (c) => `rgb(${c.join(' ')})`;
 
 // DayTime's sky colours, keyed to the real sun: dawn at sunrise, the gold hour
 // before sunset, the coral at sunset, dusk and then night after it. Bedtime has
 // nothing to do with it. Blended with a smoothstep, so the page drifts through
-// the day like a real sky. Hours in, local time. [hour, top, bottom, stars]
+// the day like a real sky. Hours in, local time.
+// [hour, sky top, sky bottom, stars, ink, glow]
+// With `sky: off` the ink colours the emphasised words, and the ring runs
+// from ink to glow: one colour per hour, bright enough to read on a plain note.
 function sky(h, rise, set) {
   const noon = (rise + set) / 2;
   const keys = [
-    [0, 0x03040c, 0x0a0e26, 1],
-    [rise - 1.2, 0x05071a, 0x161a40, 0.9], // first light
-    [rise, 0x2b2a5e, 0xe9967a, 0.25], // sunrise
-    [rise + 1, 0x4f86c6, 0xf7d9b5, 0], // morning
-    [noon, 0x2a6fd1, 0xa6d8f7, 0], // midday
-    [Math.max(set - 2.5, noon + 0.5), 0x3a5fa8, 0xf5c27a, 0], // golden hour
-    [set, 0x2a2c66, 0xf07b5f, 0.1], // sunset
-    [set + 0.75, 0x151a40, 0x7a4f8f, 0.55], // dusk
-    [Math.min(set + 1.75, 23.9), 0x060818, 0x151a3d, 1], // night
-    [24, 0x03040c, 0x0a0e26, 1],
+    [0, 0x03040c, 0x0a0e26, 1, 0x1f4fc4, 0x173a8f], // midnight: deep blue
+    [rise - 1.2, 0x05071a, 0x161a40, 0.9, 0x2f62d4, 0x5a9ae6], // first light
+    [rise, 0x2b2a5e, 0xe9967a, 0.25, 0xec7a6a, 0xf3a16b], // sunrise
+    [rise + 1, 0x4f86c6, 0xf7d9b5, 0, 0xe89b3c, 0x5ea8e8], // morning
+    [noon, 0x2a6fd1, 0xa6d8f7, 0, 0x2f86e8, 0x34c0e0], // midday
+    [Math.max(set - 2.5, noon + 0.5), 0x3a5fa8, 0xf5c27a, 0, 0xe39a1f, 0xf2c14e], // golden hour
+    [set, 0x2a2c66, 0xf07b5f, 0.1, 0xef6a4a, 0xd9577a], // sunset
+    [set + 0.75, 0x151a40, 0x7a4f8f, 0.55, 0x3a64cc, 0xe07a8a], // dusk
+    [Math.min(set + 1.75, 23.9), 0x060818, 0x151a3d, 1, 0x1f4fc4, 0x173a8f], // night
+    [24, 0x03040c, 0x0a0e26, 1, 0x1f4fc4, 0x173a8f],
   ];
   let i = 0;
   while (i < keys.length - 2 && keys[i + 1][0] <= h) i++;
   const a = keys[i], b = keys[i + 1];
   let t = b[0] > a[0] ? Math.min(Math.max((h - a[0]) / (b[0] - a[0]), 0), 1) : 0;
   t = t * t * (3 - 2 * t);
-  const top = mix(rgb(a[1]), rgb(b[1]), t), bottom = mix(rgb(a[2]), rgb(b[2]), t);
-  return { top, mid: mix(top, bottom, 0.45), bottom, stars: a[3] + (b[3] - a[3]) * t };
-}
-
-// DayTime's ring colour:
-// morning gold → afternoon coral → evening violet.
-function tint(remaining) {
-  const gold = rgb(0xffd36b), coral = rgb(0xff8a5c), violet = rgb(0xb77bff);
-  const c = remaining > 0.5 ? mix(coral, gold, (remaining - 0.5) * 2) : mix(violet, coral, remaining * 2);
-  return `rgb(${c.join(' ')})`;
+  const at = (k) => mix(rgb(a[k]), rgb(b[k]), t);
+  const top = at(1), bottom = at(2);
+  return { top, mid: mix(top, bottom, 0.45), bottom, stars: a[3] + (b[3] - a[3]) * t, ink: at(4), glow: at(5) };
 }
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -100,6 +99,7 @@ class HomeView extends MarkdownRenderChild {
   onload() {
     const root = this.containerEl;
     root.addClass('home-view');
+    root.dataset.sky = this.opts.sky === 'off' ? 'off' : 'on';
     // Keep clicks inside the block so Live Preview doesn't flip into source mode.
     this.registerDomEvent(root, 'mousedown', (e) => e.stopPropagation());
     this.registerDomEvent(root, 'click', (e) => e.stopPropagation());
@@ -155,8 +155,7 @@ class HomeView extends MarkdownRenderChild {
       if (this.itemsEl.childElementCount) this.renderItems();
     }
     const remaining = Math.min(Math.max((this.bed - now) / (this.bed - this.wake), 0), 1);
-    this.containerEl.style.setProperty('--hv-tint', tint(remaining));
-    this.paintSky(d, now);
+    this.paint(now);
 
     const h = d.getHours();
     const part = h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 18 ? 'afternoon' : 'evening';
@@ -221,7 +220,14 @@ class HomeView extends MarkdownRenderChild {
   buildRing(el) {
     const r = 44;
     this.circumference = 2 * Math.PI * r;
-    el.innerHTML = `<svg viewBox="0 0 100 100"><circle class="hv-ring-track" cx="50" cy="50" r="${r}"/>`
+    // The ring's gradient runs top (ink) to bottom (glow) on screen; the circle is turned -90°,
+    // so in its own frame that is right to left. The id is per block, since
+    // Live Preview can hold two copies of the block at once.
+    const id = `hv-ink-${++inkIds}`;
+    this.containerEl.style.setProperty('--hv-ring-ink', `url(#${id})`);
+    el.innerHTML = `<svg viewBox="0 0 100 100"><defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="94" y1="50" x2="6" y2="50">`
+      + '<stop offset="0" style="stop-color: var(--hv-tint)"/><stop offset="1" style="stop-color: var(--hv-glow)"/></linearGradient></defs>'
+      + `<circle class="hv-ring-track" cx="50" cy="50" r="${r}"/>`
       + `<circle class="hv-ring-fill" cx="50" cy="50" r="${r}" stroke-dasharray="${this.circumference}" transform="rotate(-90 50 50)"/></svg>`;
     this.ringFill = el.querySelector('.hv-ring-fill');
     this.ringLabel = el.createDiv('hv-ring-label');
@@ -243,27 +249,32 @@ class HomeView extends MarkdownRenderChild {
     }
   }
 
-  // The sky is painted on the whole pane, not just the block: the nearest
-  // .workspace-leaf-content gets the colours as variables (styles.css draws the
-  // gradient) and a layer of stars. Undone when the block goes away.
-  paintSky(d, now) {
-    if (this.opts.sky === 'off') return;
-    const pane = this.containerEl.closest('.workspace-leaf-content');
+  // The colours of the hour. With the sky on they are painted on the whole
+  // pane, not just the block: the nearest .workspace-leaf-content gets them as
+  // variables (styles.css draws the gradient) and a layer of stars. With the
+  // sky off they colour the emphasised words and the ring instead. The dev panel
+  // sits on the pane either way. Undone when the block goes away.
+  paint(now) {
+    const s = sky(now / 60, this.sun.rise / 60, this.sun.set / 60);
+    const root = this.containerEl;
+    root.style.setProperty('--hv-tint', css(s.ink));
+    root.style.setProperty('--hv-glow', css(s.glow));
+
+    const pane = root.closest('.workspace-leaf-content');
     if (!pane) {
       // Not in the document yet on the first render; try again next frame.
-      if (!this.skyRetry) this.skyRetry = requestAnimationFrame(() => { this.skyRetry = 0; this.paintSky(new Date(), now); });
+      if (!this.paneRetry) this.paneRetry = requestAnimationFrame(() => { this.paneRetry = 0; this.tick(); });
       return;
     }
     // Re-applied on every paint, not just the first: while re-rendering, Live
     // Preview briefly makes a throwaway copy of the block, and when that copy
     // unloads it takes the sky down with it.
     this.pane = pane;
+    pane.hvOwner = this;
+    if (this.opts.dev === 'on' && !pane.querySelector(':scope > .hv-dev')) this.buildDev(pane);
+    if (this.opts.sky === 'off') return;
     pane.addClass('hv-sky');
     if (!pane.querySelector(':scope > .hv-stars')) this.buildStars(pane);
-    if (this.opts.dev === 'on' && !pane.querySelector(':scope > .hv-dev')) this.buildDev(pane);
-    pane.hvOwner = this;
-    const s = sky(now / 60, this.sun.rise / 60, this.sun.set / 60);
-    const css = (c) => `rgb(${c.join(' ')})`;
     pane.style.setProperty('--hv-sky-top', css(s.top));
     pane.style.setProperty('--hv-sky-mid', css(s.mid));
     pane.style.setProperty('--hv-sky-bottom', css(s.bottom));
@@ -318,7 +329,7 @@ class HomeView extends MarkdownRenderChild {
   }
 
   onunload() {
-    if (this.skyRetry) cancelAnimationFrame(this.skyRetry);
+    if (this.paneRetry) cancelAnimationFrame(this.paneRetry);
     const pane = this.pane;
     // Live Preview re-renders the block often; only the newest one cleans up.
     if (!pane || pane.hvOwner !== this) return;
