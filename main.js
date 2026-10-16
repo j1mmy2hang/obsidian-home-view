@@ -2,12 +2,11 @@ const { Plugin, MarkdownRenderChild, TFolder, Keymap, setIcon } = require('obsid
 
 // Each can be set by a `key: value` line in the block. Without `lat:` / `lon:`
 // there is no sunrise, so the early-riser message never shows.
-// `sky: off` keeps the note's own background instead of DayTime's sky;
-// `opacity` (0–1) is how much of the window behind shows through it.
-// `dev: on` adds a corner panel with a time slider and an opacity slider.
+// `sky: off` keeps the note's own background instead of DayTime's sky.
+// `dev: on` adds a corner panel with a time slider, to preview any hour.
 const DEFAULTS = {
   name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '',
-  sky: 'on', opacity: '0.85', dev: 'off',
+  sky: 'on', dev: 'off',
 };
 const MIN = 60000;
 
@@ -26,8 +25,9 @@ function clockMinutes(s) {
   return h * 60 + m;
 }
 
-// NOAA's approximation: local minutes after midnight of sunrise, or null on a polar day/night.
-function sunrise(day, lat, lon) {
+// NOAA's approximation: local minutes after midnight of sunrise and sunset,
+// or null on a polar day/night.
+function sunTimes(day, lat, lon) {
   const rad = Math.PI / 180;
   const utcMidnight = Date.UTC(day.getFullYear(), day.getMonth(), day.getDate());
   const g = (2 * Math.PI / 365) * ((utcMidnight - Date.UTC(day.getFullYear(), 0, 0)) / 864e5 - 1);
@@ -37,28 +37,33 @@ function sunrise(day, lat, lon) {
     + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
   const cosH = Math.cos(90.833 * rad) / (Math.cos(lat * rad) * Math.cos(decl)) - Math.tan(lat * rad) * Math.tan(decl);
   if (cosH < -1 || cosH > 1) return null;
-  const d = new Date(utcMidnight + (720 - 4 * (lon + Math.acos(cosH) / rad) - eq) * MIN);
-  return d.getHours() * 60 + d.getMinutes();
+  const ha = Math.acos(cosH) / rad;
+  const local = (utcMin) => {
+    const d = new Date(utcMidnight + utcMin * MIN);
+    return d.getHours() * 60 + d.getMinutes();
+  };
+  return { rise: local(720 - 4 * (lon + ha) - eq), set: local(720 - 4 * (lon - ha) - eq) };
 }
 
 const rgb = (hex) => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 
-// DayTime's sky: a top and bottom colour for every hour, keyed to sunrise and
-// blended with a smoothstep, so the page drifts through the day like a real sky.
-// [hour, top, bottom, stars]
-function sky(h, sunriseHour) {
-  const s = Math.min(Math.max(sunriseHour, 2), 7.4);
+// DayTime's sky colours, keyed to the real sun: dawn at sunrise, the gold hour
+// before sunset, the coral at sunset, dusk and then night after it. Bedtime has
+// nothing to do with it. Blended with a smoothstep, so the page drifts through
+// the day like a real sky. Hours in, local time. [hour, top, bottom, stars]
+function sky(h, rise, set) {
+  const noon = (rise + set) / 2;
   const keys = [
     [0, 0x03040c, 0x0a0e26, 1],
-    [s - 1.2, 0x05071a, 0x161a40, 0.9],
-    [s, 0x2b2a5e, 0xe9967a, 0.25],
-    [8, 0x4f86c6, 0xf7d9b5, 0],
-    [12.5, 0x2a6fd1, 0xa6d8f7, 0],
-    [17.5, 0x3a5fa8, 0xf5c27a, 0],
-    [20, 0x2a2c66, 0xf07b5f, 0.1],
-    [21.5, 0x151a40, 0x7a4f8f, 0.55],
-    [23, 0x060818, 0x151a3d, 1],
+    [rise - 1.2, 0x05071a, 0x161a40, 0.9], // first light
+    [rise, 0x2b2a5e, 0xe9967a, 0.25], // sunrise
+    [rise + 1, 0x4f86c6, 0xf7d9b5, 0], // morning
+    [noon, 0x2a6fd1, 0xa6d8f7, 0], // midday
+    [Math.max(set - 2.5, noon + 0.5), 0x3a5fa8, 0xf5c27a, 0], // golden hour
+    [set, 0x2a2c66, 0xf07b5f, 0.1], // sunset
+    [set + 0.75, 0x151a40, 0x7a4f8f, 0.55], // dusk
+    [Math.min(set + 1.75, 23.9), 0x060818, 0x151a3d, 1], // night
     [24, 0x03040c, 0x0a0e26, 1],
   ];
   let i = 0;
@@ -142,7 +147,10 @@ class HomeView extends MarkdownRenderChild {
     if (dateKey(d) !== this.day) {
       this.day = dateKey(d);
       const lat = parseFloat(this.opts.lat), lon = parseFloat(this.opts.lon);
-      this.rise = (isNaN(lat) || isNaN(lon) ? null : sunrise(d, lat, lon)) ?? this.wake;
+      const sun = isNaN(lat) || isNaN(lon) ? null : sunTimes(d, lat, lon);
+      this.rise = sun?.rise ?? this.wake;
+      // Without a location the sky assumes a 6:30 sunrise and a 19:30 sunset.
+      this.sun = sun ?? { rise: 390, set: 1170 };
       if (this.itemsEl.childElementCount) this.renderItems();
     }
     const remaining = Math.min(Math.max((this.bed - now) / (this.bed - this.wake), 0), 1);
@@ -252,9 +260,7 @@ class HomeView extends MarkdownRenderChild {
       if (this.opts.dev === 'on' && !pane.querySelector(':scope > .hv-dev')) this.buildDev(pane);
     }
     pane.hvOwner = this;
-    const alpha = pane.hvDev?.alpha ?? parseFloat(this.opts.opacity);
-    pane.style.setProperty('--hv-sky-alpha', String(isNaN(alpha) ? 1 : alpha));
-    const s = sky(now / 60, this.rise / 60);
+    const s = sky(now / 60, this.sun.rise / 60, this.sun.set / 60);
     const css = (c) => `rgb(${c.join(' ')})`;
     pane.style.setProperty('--hv-sky-top', css(s.top));
     pane.style.setProperty('--hv-sky-mid', css(s.mid));
@@ -262,10 +268,10 @@ class HomeView extends MarkdownRenderChild {
     pane.style.setProperty('--hv-stars', s.stars.toFixed(2));
   }
 
-  // Dev panel: scrub the time of day and the sky's opacity. Its state lives on
+  // Dev panel: scrub the time of day. Its state lives on
   // the pane, so it survives Live Preview re-rendering the block.
   buildDev(pane) {
-    pane.hvDev = pane.hvDev ?? { time: null, alpha: null };
+    pane.hvDev = pane.hvDev ?? { time: null };
     const el = pane.createDiv('hv-dev');
     el.addEventListener('mousedown', (e) => e.stopPropagation());
     const row = (label) => {
@@ -290,17 +296,7 @@ class HomeView extends MarkdownRenderChild {
     time.input.addEventListener('input', () => { pane.hvDev.time = +time.input.value; showTime(); redraw(); });
     now.addEventListener('click', () => { pane.hvDev.time = null; showTime(); redraw(); });
 
-    const op = row('Sky');
-    op.input.min = '0'; op.input.max = '1'; op.input.step = '0.05';
-    const showOp = () => {
-      const a = pane.hvDev.alpha ?? parseFloat(this.opts.opacity);
-      op.input.value = String(a);
-      op.value.setText(a.toFixed(2));
-    };
-    op.input.addEventListener('input', () => { pane.hvDev.alpha = +op.input.value; showOp(); redraw(); });
-
     showTime();
-    showOp();
   }
 
   // A fixed scatter, seeded so the stars don't jump between renders.
@@ -328,7 +324,7 @@ class HomeView extends MarkdownRenderChild {
     pane.querySelector(':scope > .hv-stars')?.remove();
     pane.querySelector(':scope > .hv-dev')?.remove();
     delete pane.hvDev;
-    for (const k of ['--hv-sky-top', '--hv-sky-mid', '--hv-sky-bottom', '--hv-stars', '--hv-sky-alpha']) pane.style.removeProperty(k);
+    for (const k of ['--hv-sky-top', '--hv-sky-mid', '--hv-sky-bottom', '--hv-stars']) pane.style.removeProperty(k);
     delete pane.hvOwner;
   }
 

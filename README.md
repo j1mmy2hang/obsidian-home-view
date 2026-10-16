@@ -15,8 +15,8 @@ An Obsidian code block for a home page that talks to you, in plain sentences:
 Beside the text sit two dials: a small analog clock, and a ring showing the
 percent of your waking day that is left. Behind it all, the pane takes the colour
 of the sky at this hour — navy and stars before dawn, rose at sunrise, blue at
-midday, gold in the afternoon, coral at sunset, violet at dusk — blended minute
-by minute.
+midday, gold before sunset, coral at sunset, violet at dusk — following the real
+sun, blended minute by minute.
 
 ````
 ```home-view
@@ -46,16 +46,17 @@ bed: 23:00
 lat:
 lon:
 sky: on
-opacity: 0.85
 dev: off
 ```
 ````
 
 `name` is added to the greeting. `lat` and `lon` (decimal degrees) are only
-used to compute today's sunrise (the sky's dawn follows it); without them the
-early-riser message never shows. `sky: off` keeps the note's normal background;
-`opacity` (0–1) is how much of the window behind shows through the sky. `dev: on`
-adds a corner panel with a time slider and an opacity slider, to preview any hour.
+used to compute today's sunrise and sunset; without them the
+early-riser message never shows. The sky follows the real sun: dawn at sunrise,
+gold before sunset, coral at sunset, then dusk and night — whatever your bedtime.
+Without a location it assumes sunrise at 6:30 and sunset at 19:30. `sky: off`
+keeps the note's normal background. `dev: on` adds a corner time slider to preview
+any hour.
 
 ## Install
 

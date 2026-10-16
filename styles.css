@@ -268,12 +268,7 @@
 
 .workspace-leaf-content.hv-sky {
   isolation: isolate;
-  /* --hv-sky-alpha below 1 lets the window behind (glass, on desktop) show through. */
-  --hv-a: calc(var(--hv-sky-alpha, 1) * 100%);
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--hv-sky-top) var(--hv-a), transparent),
-    color-mix(in srgb, var(--hv-sky-mid) var(--hv-a), transparent) 55%,
-    color-mix(in srgb, var(--hv-sky-bottom) var(--hv-a), transparent)) !important;
+  background: linear-gradient(180deg, var(--hv-sky-top), var(--hv-sky-mid) 55%, var(--hv-sky-bottom)) !important;
 }
 
 /* Everything in the pane lets the sky through. */
