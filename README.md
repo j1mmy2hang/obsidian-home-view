@@ -46,12 +46,16 @@ bed: 23:00
 lat:
 lon:
 sky: on
+opacity: 0.85
+dev: off
 ```
 ````
 
 `name` is added to the greeting. `lat` and `lon` (decimal degrees) are only
 used to compute today's sunrise (the sky's dawn follows it); without them the
-early-riser message never shows. `sky: off` keeps the note's normal background.
+early-riser message never shows. `sky: off` keeps the note's normal background;
+`opacity` (0–1) is how much of the window behind shows through the sky. `dev: on`
+adds a corner panel with a time slider and an opacity slider, to preview any hour.
 
 ## Install
 

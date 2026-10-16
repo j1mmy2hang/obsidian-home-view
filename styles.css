@@ -268,7 +268,12 @@
 
 .workspace-leaf-content.hv-sky {
   isolation: isolate;
-  background: linear-gradient(180deg, var(--hv-sky-top), var(--hv-sky-mid) 55%, var(--hv-sky-bottom)) !important;
+  /* --hv-sky-alpha below 1 lets the window behind (glass, on desktop) show through. */
+  --hv-a: calc(var(--hv-sky-alpha, 1) * 100%);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--hv-sky-top) var(--hv-a), transparent),
+    color-mix(in srgb, var(--hv-sky-mid) var(--hv-a), transparent) 55%,
+    color-mix(in srgb, var(--hv-sky-bottom) var(--hv-a), transparent)) !important;
 }
 
 /* Everything in the pane lets the sky through. */
@@ -330,3 +335,47 @@
 .hv-sky .hv-ring-track { stroke: rgb(255 255 255 / 0.22); }
 .hv-sky .hv-ring-fill { stroke: #fff; }
 .hv-sky .hv-ring[data-mode] .hv-ring-label { color: #fff; }
+
+/* ───── Dev panel (dev: on) ───── */
+
+.hv-dev {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10;
+  display: grid;
+  gap: 6px;
+  width: 240px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.35);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  color: #fff;
+  font-family: var(--font-interface);
+  font-size: 12px;
+}
+
+.hv-dev-row {
+  display: grid;
+  grid-template-columns: 34px 1fr 40px;
+  align-items: center;
+  gap: 8px;
+}
+
+.hv-dev-row input {
+  width: 100%;
+  margin: 0;
+}
+
+.hv-dev-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hv-dev-now {
+  justify-self: end;
+  height: auto;
+  padding: 2px 10px;
+  font-size: 11px;
+}

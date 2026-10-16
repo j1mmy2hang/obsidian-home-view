@@ -2,8 +2,13 @@ const { Plugin, MarkdownRenderChild, TFolder, Keymap, setIcon } = require('obsid
 
 // Each can be set by a `key: value` line in the block. Without `lat:` / `lon:`
 // there is no sunrise, so the early-riser message never shows.
-// `sky: off` keeps the note's own background instead of DayTime's sky.
-const DEFAULTS = { name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '', sky: 'on' };
+// `sky: off` keeps the note's own background instead of DayTime's sky;
+// `opacity` (0–1) is how much of the window behind shows through it.
+// `dev: on` adds a corner panel with a time slider and an opacity slider.
+const DEFAULTS = {
+  name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '',
+  sky: 'on', opacity: '0.85', dev: 'off',
+};
 const MIN = 60000;
 
 function parseOptions(source) {
@@ -129,7 +134,10 @@ class HomeView extends MarkdownRenderChild {
   }
 
   tick() {
-    const d = new Date();
+    const real = new Date();
+    const dev = this.pane?.hvDev;
+    const d = dev?.time == null ? real
+      : new Date(real.getFullYear(), real.getMonth(), real.getDate(), Math.floor(dev.time / 60), dev.time % 60);
     const now = d.getHours() * 60 + d.getMinutes();
     if (dateKey(d) !== this.day) {
       this.day = dateKey(d);
@@ -241,14 +249,58 @@ class HomeView extends MarkdownRenderChild {
       this.pane = pane;
       pane.addClass('hv-sky');
       this.stars = pane.querySelector(':scope > .hv-stars') ?? this.buildStars(pane);
+      if (this.opts.dev === 'on' && !pane.querySelector(':scope > .hv-dev')) this.buildDev(pane);
     }
     pane.hvOwner = this;
+    const alpha = pane.hvDev?.alpha ?? parseFloat(this.opts.opacity);
+    pane.style.setProperty('--hv-sky-alpha', String(isNaN(alpha) ? 1 : alpha));
     const s = sky(now / 60, this.rise / 60);
     const css = (c) => `rgb(${c.join(' ')})`;
     pane.style.setProperty('--hv-sky-top', css(s.top));
     pane.style.setProperty('--hv-sky-mid', css(s.mid));
     pane.style.setProperty('--hv-sky-bottom', css(s.bottom));
     pane.style.setProperty('--hv-stars', s.stars.toFixed(2));
+  }
+
+  // Dev panel: scrub the time of day and the sky's opacity. Its state lives on
+  // the pane, so it survives Live Preview re-rendering the block.
+  buildDev(pane) {
+    pane.hvDev = pane.hvDev ?? { time: null, alpha: null };
+    const el = pane.createDiv('hv-dev');
+    el.addEventListener('mousedown', (e) => e.stopPropagation());
+    const row = (label) => {
+      const r = el.createDiv('hv-dev-row');
+      r.createSpan({ cls: 'hv-dev-label', text: label });
+      const input = r.createEl('input', { type: 'range' });
+      const value = r.createSpan('hv-dev-value');
+      return { input, value };
+    };
+    const redraw = () => pane.hvOwner?.tick();
+
+    const time = row('Time');
+    time.input.min = '0'; time.input.max = '1435'; time.input.step = '5';
+    const now = el.createEl('button', { cls: 'hv-dev-now', text: 'Now' });
+    const showTime = () => {
+      const t = pane.hvDev.time;
+      const live = new Date();
+      const m = t ?? live.getHours() * 60 + live.getMinutes();
+      time.input.value = String(m);
+      time.value.setText(t == null ? 'live' : `${pad(Math.floor(m / 60))}:${pad(m % 60)}`);
+    };
+    time.input.addEventListener('input', () => { pane.hvDev.time = +time.input.value; showTime(); redraw(); });
+    now.addEventListener('click', () => { pane.hvDev.time = null; showTime(); redraw(); });
+
+    const op = row('Sky');
+    op.input.min = '0'; op.input.max = '1'; op.input.step = '0.05';
+    const showOp = () => {
+      const a = pane.hvDev.alpha ?? parseFloat(this.opts.opacity);
+      op.input.value = String(a);
+      op.value.setText(a.toFixed(2));
+    };
+    op.input.addEventListener('input', () => { pane.hvDev.alpha = +op.input.value; showOp(); redraw(); });
+
+    showTime();
+    showOp();
   }
 
   // A fixed scatter, seeded so the stars don't jump between renders.
@@ -274,7 +326,9 @@ class HomeView extends MarkdownRenderChild {
     if (!pane || pane.hvOwner !== this) return;
     pane.removeClass('hv-sky');
     pane.querySelector(':scope > .hv-stars')?.remove();
-    for (const k of ['--hv-sky-top', '--hv-sky-mid', '--hv-sky-bottom', '--hv-stars']) pane.style.removeProperty(k);
+    pane.querySelector(':scope > .hv-dev')?.remove();
+    delete pane.hvDev;
+    for (const k of ['--hv-sky-top', '--hv-sky-mid', '--hv-sky-bottom', '--hv-stars', '--hv-sky-alpha']) pane.style.removeProperty(k);
     delete pane.hvOwner;
   }
 
