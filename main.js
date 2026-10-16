@@ -2,7 +2,8 @@ const { Plugin, MarkdownRenderChild, TFolder, Keymap, setIcon } = require('obsid
 
 // Each can be set by a `key: value` line in the block. Without `lat:` / `lon:`
 // there is no sunrise, so the early-riser message never shows.
-const DEFAULTS = { name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '' };
+// `sky: off` keeps the note's own background instead of DayTime's sky.
+const DEFAULTS = { name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '', sky: 'on' };
 const MIN = 60000;
 
 function parseOptions(source) {
@@ -35,11 +36,38 @@ function sunrise(day, lat, lon) {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+const rgb = (hex) => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+// DayTime's sky: a top and bottom colour for every hour, keyed to sunrise and
+// blended with a smoothstep, so the page drifts through the day like a real sky.
+// [hour, top, bottom, stars]
+function sky(h, sunriseHour) {
+  const s = Math.min(Math.max(sunriseHour, 2), 7.4);
+  const keys = [
+    [0, 0x03040c, 0x0a0e26, 1],
+    [s - 1.2, 0x05071a, 0x161a40, 0.9],
+    [s, 0x2b2a5e, 0xe9967a, 0.25],
+    [8, 0x4f86c6, 0xf7d9b5, 0],
+    [12.5, 0x2a6fd1, 0xa6d8f7, 0],
+    [17.5, 0x3a5fa8, 0xf5c27a, 0],
+    [20, 0x2a2c66, 0xf07b5f, 0.1],
+    [21.5, 0x151a40, 0x7a4f8f, 0.55],
+    [23, 0x060818, 0x151a3d, 1],
+    [24, 0x03040c, 0x0a0e26, 1],
+  ];
+  let i = 0;
+  while (i < keys.length - 2 && keys[i + 1][0] <= h) i++;
+  const a = keys[i], b = keys[i + 1];
+  let t = b[0] > a[0] ? Math.min(Math.max((h - a[0]) / (b[0] - a[0]), 0), 1) : 0;
+  t = t * t * (3 - 2 * t);
+  const top = mix(rgb(a[1]), rgb(b[1]), t), bottom = mix(rgb(a[2]), rgb(b[2]), t);
+  return { top, mid: mix(top, bottom, 0.45), bottom, stars: a[3] + (b[3] - a[3]) * t };
+}
+
 // DayTime's ring colour:
 // morning gold → afternoon coral → evening violet.
 function tint(remaining) {
-  const rgb = (hex) => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
-  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
   const gold = rgb(0xffd36b), coral = rgb(0xff8a5c), violet = rgb(0xb77bff);
   const c = remaining > 0.5 ? mix(coral, gold, (remaining - 0.5) * 2) : mix(violet, coral, remaining * 2);
   return `rgb(${c.join(' ')})`;
@@ -111,6 +139,7 @@ class HomeView extends MarkdownRenderChild {
     }
     const remaining = Math.min(Math.max((this.bed - now) / (this.bed - this.wake), 0), 1);
     this.containerEl.style.setProperty('--hv-tint', tint(remaining));
+    this.paintSky(d, now);
 
     const h = d.getHours();
     const part = h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 18 ? 'afternoon' : 'evening';
@@ -195,6 +224,58 @@ class HomeView extends MarkdownRenderChild {
       setIcon(label, mode === 'dawn' ? 'sun' : 'moon');
       this.ringEl.setAttr('aria-label', mode === 'dawn' ? 'The day has not started yet' : 'Night');
     }
+  }
+
+  // The sky is painted on the whole pane, not just the block: the nearest
+  // .workspace-leaf-content gets the colours as variables (styles.css draws the
+  // gradient) and a layer of stars. Undone when the block goes away.
+  paintSky(d, now) {
+    if (this.opts.sky === 'off') return;
+    const pane = this.containerEl.closest('.workspace-leaf-content');
+    if (!pane) {
+      // Not in the document yet on the first render; try again next frame.
+      if (!this.skyRetry) this.skyRetry = requestAnimationFrame(() => { this.skyRetry = 0; this.paintSky(new Date(), now); });
+      return;
+    }
+    if (pane !== this.pane) {
+      this.pane = pane;
+      pane.addClass('hv-sky');
+      this.stars = pane.querySelector(':scope > .hv-stars') ?? this.buildStars(pane);
+    }
+    pane.hvOwner = this;
+    const s = sky(now / 60, this.rise / 60);
+    const css = (c) => `rgb(${c.join(' ')})`;
+    pane.style.setProperty('--hv-sky-top', css(s.top));
+    pane.style.setProperty('--hv-sky-mid', css(s.mid));
+    pane.style.setProperty('--hv-sky-bottom', css(s.bottom));
+    pane.style.setProperty('--hv-stars', s.stars.toFixed(2));
+  }
+
+  // A fixed scatter, seeded so the stars don't jump between renders.
+  buildStars(pane) {
+    const el = pane.createDiv('hv-stars');
+    let seed = 7;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 70; i++) {
+      const star = el.createDiv('hv-star');
+      star.style.left = `${rand() * 100}%`;
+      star.style.top = `${rand() * 75}%`;
+      star.style.setProperty('--a', (0.25 + rand() * 0.6).toFixed(2));
+      star.style.setProperty('--d', `${(rand() * 5).toFixed(1)}s`);
+      if (rand() > 0.88) star.addClass('is-bright');
+    }
+    return el;
+  }
+
+  onunload() {
+    if (this.skyRetry) cancelAnimationFrame(this.skyRetry);
+    const pane = this.pane;
+    // Live Preview re-renders the block often; only the newest one cleans up.
+    if (!pane || pane.hvOwner !== this) return;
+    pane.removeClass('hv-sky');
+    pane.querySelector(':scope > .hv-stars')?.remove();
+    for (const k of ['--hv-sky-top', '--hv-sky-mid', '--hv-sky-bottom', '--hv-stars']) pane.style.removeProperty(k);
+    delete pane.hvOwner;
   }
 
   files() {

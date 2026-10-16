@@ -13,8 +13,10 @@ An Obsidian code block for a home page that talks to you, in plain sentences:
 > ○ Read chapter 3
 
 Beside the text sit two dials: a small analog clock, and a ring showing the
-percent of your waking day that is left. The key facts are tinted gold → coral →
-violet as the day runs out.
+percent of your waking day that is left. Behind it all, the pane takes the colour
+of the sky at this hour — navy and stars before dawn, rose at sunrise, blue at
+midday, gold in the afternoon, coral at sunset, violet at dusk — blended minute
+by minute.
 
 ````
 ```home-view
@@ -43,11 +45,13 @@ wake: 8:00
 bed: 23:00
 lat:
 lon:
+sky: on
 ```
 ````
 
 `name` is added to the greeting. `lat` and `lon` (decimal degrees) are only
-used to compute today's sunrise; without them the early-riser message never shows.
+used to compute today's sunrise (the sky's dawn follows it); without them the
+early-riser message never shows. `sky: off` keeps the note's normal background.
 
 ## Install
 

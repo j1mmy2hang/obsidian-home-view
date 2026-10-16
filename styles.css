@@ -263,3 +263,70 @@
 
 .hv-ring[data-mode="dawn"] .hv-ring-label { color: #f2b84b; }
 .hv-ring[data-mode="night"] .hv-ring-label { color: color-mix(in srgb, #b8b4ff 70%, var(--text-normal)); }
+
+/* ───── DayTime's sky, painted on the whole pane (sky: on) ───── */
+
+.workspace-leaf-content.hv-sky {
+  isolation: isolate;
+  background: linear-gradient(180deg, var(--hv-sky-top), var(--hv-sky-mid) 55%, var(--hv-sky-bottom)) !important;
+}
+
+/* Everything in the pane lets the sky through. */
+.workspace-leaf-content.hv-sky > .view-header,
+.workspace-leaf-content.hv-sky > .view-content,
+.workspace-leaf-content.hv-sky .markdown-source-view,
+.workspace-leaf-content.hv-sky .markdown-preview-view,
+.workspace-leaf-content.hv-sky .cm-editor,
+.workspace-leaf-content.hv-sky .cm-scroller {
+  background: transparent !important;
+}
+
+.hv-stars {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--hv-stars, 0);
+  transition: opacity 2s ease;
+}
+
+.hv-star {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: var(--a);
+  animation: hv-twinkle 5s ease-in-out var(--d) infinite;
+}
+
+.hv-star.is-bright {
+  width: 3px;
+  height: 3px;
+  box-shadow: 0 0 6px rgb(255 255 255 / 0.7);
+}
+
+@keyframes hv-twinkle {
+  50% { opacity: calc(var(--a) * 0.35); }
+}
+
+/* On the sky everything is white, as in DayTime; weight carries the emphasis. */
+.hv-sky .home-view {
+  --text-normal: #fff;
+  --text-muted: rgb(255 255 255 / 0.8);
+  --text-faint: rgb(255 255 255 / 0.55);
+  --hv-accent: #fff;
+  --checkbox-border-color: rgb(255 255 255 / 0.6);
+  text-shadow: 0 1px 14px rgb(0 0 0 / 0.12);
+}
+
+.hv-sky .hv-key {
+  font-weight: 700;
+}
+
+.hv-sky .hv-face { stroke: rgb(255 255 255 / 0.45); }
+.hv-sky .hv-tick { stroke: rgb(255 255 255 / 0.6); }
+.hv-sky .hv-pin { fill: #fff; }
+.hv-sky .hv-ring-track { stroke: rgb(255 255 255 / 0.22); }
+.hv-sky .hv-ring-fill { stroke: #fff; }
+.hv-sky .hv-ring[data-mode] .hv-ring-label { color: #fff; }
