@@ -254,12 +254,13 @@ class HomeView extends MarkdownRenderChild {
       if (!this.skyRetry) this.skyRetry = requestAnimationFrame(() => { this.skyRetry = 0; this.paintSky(new Date(), now); });
       return;
     }
-    if (pane !== this.pane) {
-      this.pane = pane;
-      pane.addClass('hv-sky');
-      this.stars = pane.querySelector(':scope > .hv-stars') ?? this.buildStars(pane);
-      if (this.opts.dev === 'on' && !pane.querySelector(':scope > .hv-dev')) this.buildDev(pane);
-    }
+    // Re-applied on every paint, not just the first: while re-rendering, Live
+    // Preview briefly makes a throwaway copy of the block, and when that copy
+    // unloads it takes the sky down with it.
+    this.pane = pane;
+    pane.addClass('hv-sky');
+    if (!pane.querySelector(':scope > .hv-stars')) this.buildStars(pane);
+    if (this.opts.dev === 'on' && !pane.querySelector(':scope > .hv-dev')) this.buildDev(pane);
     pane.hvOwner = this;
     const s = sky(now / 60, this.sun.rise / 60, this.sun.set / 60);
     const css = (c) => `rgb(${c.join(' ')})`;
