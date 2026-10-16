@@ -3,12 +3,47 @@ const { Plugin, MarkdownRenderChild, TFolder, Keymap, setIcon } = require('obsid
 // Each can be set by a `key: value` line in the block. Without `lat:` / `lon:`
 // there is no sunrise, so the early-riser message never shows.
 // `sky: off` keeps the note's own background instead of DayTime's sky.
-// `dev: on` adds a corner panel with a time slider, to preview any hour.
+// `opacity` (0–1) lets the window behind show through the sky, and `material`
+// picks the macOS blur behind the window while the home page is on screen —
+// both only with Obsidian's "Translucent window" on (see windowGlass below).
+// `dev: on` adds a corner panel to preview any hour, opacity and material.
 const DEFAULTS = {
   name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '',
-  sky: 'on', dev: 'off',
+  sky: 'on', opacity: '1', material: 'sidebar', dev: 'off',
 };
 const MIN = 60000;
+
+// macOS window materials Electron can put behind the page. Obsidian itself uses
+// 'sidebar'. 'none' removes the blur: the window is then just transparent.
+const MATERIALS = ['sidebar', 'under-window', 'fullscreen-ui', 'hud', 'window', 'popover', 'menu', 'header', 'none'];
+
+// The Electron window, or null (mobile, or a future Obsidian without remote).
+function electronWindow() {
+  try {
+    return require('electron').remote.getCurrentWindow();
+  } catch (e) {
+    return null;
+  }
+}
+
+// The window glass is one per window, so one owner sets it: whichever home page
+// is on screen. Leaving it puts back exactly what Obsidian had.
+const windowGlass = {
+  current: undefined, // material we last set; undefined = Obsidian's own
+  set(material) {
+    const win = electronWindow();
+    if (!win || material === this.current) return;
+    win.setVibrancy(material === 'none' ? null : material);
+    this.current = material;
+  },
+  restore() {
+    if (this.current === undefined) return;
+    const win = electronWindow();
+    // Obsidian's own rule: 'sidebar' when the window is translucent, else none.
+    win?.setVibrancy(document.body.hasClass('is-translucent') ? 'sidebar' : null);
+    this.current = undefined;
+  },
+};
 
 function parseOptions(source) {
   const opts = { ...DEFAULTS };
@@ -136,6 +171,12 @@ class HomeView extends MarkdownRenderChild {
     this.registerEvent(this.app.vault.on('delete', refresh));
     this.registerEvent(this.app.vault.on('rename', refresh));
     this.registerEvent(this.app.metadataCache.on('changed', refresh));
+
+    // Switching tabs or panes can hide or reveal the home page: hand the window
+    // glass back (or take it) right away, not at the next minute.
+    const glass = () => window.setTimeout(() => this.updateGlass(), 0);
+    this.registerEvent(this.app.workspace.on('active-leaf-change', glass));
+    this.registerEvent(this.app.workspace.on('layout-change', glass));
   }
 
   tick() {
@@ -260,6 +301,8 @@ class HomeView extends MarkdownRenderChild {
       if (this.opts.dev === 'on' && !pane.querySelector(':scope > .hv-dev')) this.buildDev(pane);
     }
     pane.hvOwner = this;
+    pane.style.setProperty('--hv-sky-alpha', String(this.alpha()));
+    this.updateGlass();
     const s = sky(now / 60, this.sun.rise / 60, this.sun.set / 60);
     const css = (c) => `rgb(${c.join(' ')})`;
     pane.style.setProperty('--hv-sky-top', css(s.top));
@@ -268,10 +311,34 @@ class HomeView extends MarkdownRenderChild {
     pane.style.setProperty('--hv-stars', s.stars.toFixed(2));
   }
 
+  alpha() {
+    const a = this.pane?.hvDev?.alpha ?? parseFloat(this.opts.opacity);
+    return isNaN(a) ? 1 : Math.min(Math.max(a, 0), 1);
+  }
+
+  material() {
+    const m = this.pane?.hvDev?.material ?? this.opts.material;
+    return MATERIALS.includes(m) ? m : 'sidebar';
+  }
+
+  // See-through: only while this home page is on screen and the sky lets light
+  // through. Then the window gets the chosen material and body.hv-see-through
+  // moves Obsidian's glass tint off the window root (styles.css). Otherwise
+  // everything is exactly as Obsidian left it.
+  updateGlass() {
+    const pane = this.pane;
+    if (!pane || pane.hvOwner !== this) return;
+    const onScreen = pane.isConnected && pane.offsetParent !== null;
+    const glass = onScreen && document.body.hasClass('is-translucent') && this.alpha() < 1;
+    document.body.toggleClass('hv-see-through', glass);
+    if (glass) windowGlass.set(this.material());
+    else windowGlass.restore();
+  }
+
   // Dev panel: scrub the time of day. Its state lives on
   // the pane, so it survives Live Preview re-rendering the block.
   buildDev(pane) {
-    pane.hvDev = pane.hvDev ?? { time: null };
+    pane.hvDev = pane.hvDev ?? { time: null, alpha: null, material: null };
     const el = pane.createDiv('hv-dev');
     el.addEventListener('mousedown', (e) => e.stopPropagation());
     const row = (label) => {
@@ -296,7 +363,24 @@ class HomeView extends MarkdownRenderChild {
     time.input.addEventListener('input', () => { pane.hvDev.time = +time.input.value; showTime(); redraw(); });
     now.addEventListener('click', () => { pane.hvDev.time = null; showTime(); redraw(); });
 
+    const op = row('Sky');
+    op.input.min = '0'; op.input.max = '1'; op.input.step = '0.05';
+    const showOp = () => {
+      const a = pane.hvOwner?.alpha() ?? 1;
+      op.input.value = String(a);
+      op.value.setText(a.toFixed(2));
+    };
+    op.input.addEventListener('input', () => { pane.hvDev.alpha = +op.input.value; showOp(); redraw(); });
+
+    const mat = el.createDiv('hv-dev-row');
+    mat.createSpan({ cls: 'hv-dev-label', text: 'Glass' });
+    const select = mat.createEl('select', 'dropdown');
+    MATERIALS.forEach((m) => select.createEl('option', { value: m, text: m }));
+    select.value = pane.hvOwner?.material() ?? 'sidebar';
+    select.addEventListener('change', () => { pane.hvDev.material = select.value; redraw(); });
+
     showTime();
+    showOp();
   }
 
   // A fixed scatter, seeded so the stars don't jump between renders.
@@ -324,7 +408,9 @@ class HomeView extends MarkdownRenderChild {
     pane.querySelector(':scope > .hv-stars')?.remove();
     pane.querySelector(':scope > .hv-dev')?.remove();
     delete pane.hvDev;
-    for (const k of ['--hv-sky-top', '--hv-sky-mid', '--hv-sky-bottom', '--hv-stars']) pane.style.removeProperty(k);
+    for (const k of ['--hv-sky-top', '--hv-sky-mid', '--hv-sky-bottom', '--hv-stars', '--hv-sky-alpha']) pane.style.removeProperty(k);
+    document.body.removeClass('hv-see-through');
+    windowGlass.restore();
     delete pane.hvOwner;
   }
 
