@@ -549,27 +549,21 @@ class HomeView extends MarkdownRenderChild {
   renderSay(items = this.files()) {
     const p = this.sayEl;
     p.empty();
-    const reminders = this.reminders;
-    const left = reminders.filter((r) => !r.isCompleted).length;
-    if (!items.length && !left) {
+    const left = this.reminders.filter((r) => !r.isCompleted).length;
+    // Only the counts above zero are said. With both, each gets its own line.
+    const parts = [[items.length, 'remaining todo'], [left, 'reminder']].filter(([n]) => n);
+    if (!parts.length) {
       p.createSpan({ cls: 'hv-key', text: 'Congratulations' });
       p.appendText(', you are all clear for today.');
-    } else {
-      // With reminders too, each part gets its own line.
-      const both = reminders.length > 0;
-      p.appendText('You have');
-      if (both) p.createEl('br');
-      p.appendText(both ? '' : ' ');
-      p.createSpan({ cls: 'hv-key hv-num', text: String(items.length) });
-      p.appendText(` remaining ${plural(items.length, 'todo')}`);
-      if (both) {
-        p.appendText(',');
-        p.createEl('br');
-        p.createSpan({ cls: 'hv-key hv-num', text: String(left) });
-        p.appendText(` ${plural(left, 'reminder')}`);
-      }
-      p.appendText('.');
+      return;
     }
+    const split = parts.length > 1;
+    p.appendText('You have');
+    parts.forEach(([n, word], i) => {
+      if (split) p.createEl('br'); else p.appendText(' ');
+      p.createSpan({ cls: 'hv-key hv-num', text: String(n) });
+      p.appendText(` ${plural(n, word)}${i < parts.length - 1 ? ',' : '.'}`);
+    });
   }
 }
 

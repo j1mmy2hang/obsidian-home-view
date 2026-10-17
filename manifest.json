@@ -1,7 +1,7 @@
 {
   "id": "home-view",
   "name": "Home View",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "minAppVersion": "1.4.0",
   "description": "A `home-view` code block: a home page that talks to you — the time, the day left, a clock and a ring, the notes in a folder, and today's Apple Reminders on macOS.",
   "author": "Jimmy Zhang",
