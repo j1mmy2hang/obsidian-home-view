@@ -1,4 +1,4 @@
-const { Plugin, MarkdownRenderChild, TFolder, Keymap, Notice, Platform, setIcon } = require('obsidian');
+const { Plugin, MarkdownRenderChild, TFolder, Keymap, Notice, Platform, setIcon, requestUrl } = require('obsidian');
 
 // Each can be set by a `key: value` line in the block. Without `lat:` / `lon:`
 // there is no sunrise, so the early-riser message never shows.
@@ -6,9 +6,14 @@ const { Plugin, MarkdownRenderChild, TFolder, Keymap, Notice, Platform, setIcon 
 // emphasised words then take the colour of the hour instead.
 // `dev: on` adds a corner panel with a time slider, to preview any hour.
 // `reminders: off` leaves Apple Reminders out (they need remindctl, on a Mac).
+// `calendar: off` leaves out the next Apple Calendar event (needs icalBuddy, on a Mac).
+// `calendars:` limits it to some calendars: names, or IDs where two share a
+// name, comma-separated (`icalBuddy calendars` lists both). Blank = all.
+// `daylist:` takes a Spotify playlist link and adds a line that plays a random
+// song from it in the Spotify app (on a Mac). Blank = no line.
 const DEFAULTS = {
   name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '',
-  sky: 'on', dev: 'off', reminders: 'on',
+  sky: 'on', dev: 'off', reminders: 'on', calendar: 'on', calendars: '', daylist: '',
 };
 const MIN = 60000;
 const DAY = 24 * 60 * MIN;
@@ -91,6 +96,8 @@ const pad = (n) => String(n).padStart(2, '0');
 const duration = (min) => (Math.floor(min / 60) ? `${Math.floor(min / 60)}h ${min % 60}min` : `${min}min`);
 const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const plural = (n, word) => `${word}${n === 1 ? '' : 's'}`;
+// Past a day, hours and minutes get long; "6d 21h" instead.
+const until = (min) => (min < 24 * 60 ? duration(min) : `${Math.floor(min / 1440)}d ${Math.floor(min % 1440 / 60)}h`);
 
 // A reminder's due date as a pill: the time if it is today ("16:30"), else
 // "Yesterday" or the date ("Oct 14"), with the time after it when it has one.
@@ -121,10 +128,63 @@ function remindctl(...args) {
   });
 }
 
+// Apple Calendar, through icalBuddy (`brew install ical-buddy`), which asks
+// Calendar itself; the database macOS keeps it in is closed to other apps.
+// One line per event, "Title<tab>2026-10-20 at 13:30 - 14:00", all-day events
+// left out; icalBuddy sometimes drops the date ("Title<tab>13:30 - 14:00"), and
+// then it is today. Ones already under way are dropped when shown.
+const ICALBUDDY = ['/opt/homebrew/bin/icalBuddy', '/usr/local/bin/icalBuddy'];
+function nextEvents(calendars) {
+  if (!Platform.isMacOS || !Platform.isDesktopApp) return null;
+  const fs = require('fs');
+  const bin = ICALBUDDY.find((p) => fs.existsSync(p));
+  if (!bin) return null;
+  const args = ['-n', '-nc', '-nrd', '-ea', '-b', '', '-ps', '|\t|', '-iep', 'title,datetime',
+    '-df', '%Y-%m-%d', '-tf', '%H:%M', '-li', '8'];
+  const only = calendars.split(',').map((c) => c.trim()).filter(Boolean).join(',');
+  if (only) args.push('-ic', only);
+  args.push('eventsToday');
+  return new Promise((resolve, reject) => {
+    require('child_process').execFile(bin, args, { timeout: 15000 }, (err, out) => {
+      if (err) return reject(err);
+      const today = new Date();
+      resolve(out.split('\n').map((line) => {
+        const m = line.match(/^(.*)\t(?:(\d{4})-(\d\d)-(\d\d) at )?(\d\d):(\d\d)/);
+        if (!m) return null;
+        const day = m[2] ? new Date(m[2], m[3] - 1, m[4]) : new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        day.setHours(m[5], m[6]);
+        return { title: m[1], start: day.getTime() / 1000 };
+      }).filter(Boolean));
+    });
+  });
+}
+
+// Spotify. The Web API no longer lets apps read Spotify-made playlists such as
+// daylist, but the playlist's public embed page lists its songs, no login. One
+// is picked at random and the Spotify app plays it through its own AppleScript,
+// inside the playlist, so the songs after it are the daylist's too.
+// A function, as `process` is not there on a phone.
+const spotifyApps = () => ['/Applications/Spotify.app', `${process.env.HOME}/Applications/Spotify.app`];
+const playlistId = (link) => link.match(/playlist[:/]([A-Za-z0-9]{22})/)?.[1] ?? null;
+async function playlistTracks(id) {
+  const html = (await requestUrl(`https://open.spotify.com/embed/playlist/${id}`)).text;
+  const json = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/)?.[1];
+  const list = JSON.parse(json ?? 'null')?.props?.pageProps?.state?.data?.entity?.trackList ?? [];
+  return list.filter((t) => t.isPlayable !== false && t.uri?.startsWith('spotify:track:'));
+}
+function playInPlaylist(track, id) {
+  const script = 'on run argv\ntell application "Spotify" to play track (item 1 of argv) in context (item 2 of argv)\nend run';
+  return new Promise((resolve, reject) => {
+    require('child_process').execFile('/usr/bin/osascript', ['-e', script, track, `spotify:playlist:${id}`], { timeout: 15000 },
+      (err) => (err ? reject(err) : resolve()));
+  });
+}
+
 class HomeView extends MarkdownRenderChild {
   constructor(plugin, el, opts, sourcePath) {
     super(el);
     this.app = plugin.app;
+    this.cache = plugin.cache;
     this.opts = opts;
     this.sourcePath = sourcePath;
     this.wake = clockMinutes(opts.wake);
@@ -153,11 +213,19 @@ class HomeView extends MarkdownRenderChild {
     this.buildClock(dials.createDiv({ cls: 'hv-dial hv-clock', attr: { role: 'img' } }));
     this.buildRing(dials.createDiv({ cls: 'hv-dial hv-ring', attr: { role: 'img' } }));
     this.itemsEl = layout.createDiv('hv-items');
+    this.buildMusic(layout);
+    this.eventEl = layout.createEl('p', 'hv-event');
 
-    this.reminders = [];
+    // Start from what the last widget fetched, so a fresh render (Reading view,
+    // reopening the note) shows reminders and the next event at once; the
+    // fetches below then bring them up to date.
+    this.reminders = this.opts.reminders === 'off' ? [] : this.cache.reminders.map((r) => ({ ...r }));
+    // No events (null) until Calendar has answered: the line stays hidden.
+    this.events = this.opts.calendar === 'off' || this.cache.calendars !== this.opts.calendars ? null : this.cache.events;
     this.tick();
     this.renderItems();
     this.loadReminders();
+    this.loadEvents();
 
     // Wake on each minute boundary, then every minute after it.
     const t = window.setTimeout(() => {
@@ -181,11 +249,12 @@ class HomeView extends MarkdownRenderChild {
     this.registerEvent(this.app.vault.on('rename', refresh));
     this.registerEvent(this.app.metadataCache.on('changed', refresh));
 
-    // Reminders change in other apps, so look again whenever the page comes
-    // back into view, and every five minutes.
-    this.registerDomEvent(window, 'focus', () => this.loadReminders());
-    this.registerDomEvent(document, 'visibilitychange', () => { if (!document.hidden) this.loadReminders(); });
-    this.registerInterval(window.setInterval(() => this.loadReminders(), 5 * MIN));
+    // Reminders and events change in other apps, so look again whenever the
+    // page comes back into view, and every five minutes.
+    const reload = () => { this.loadReminders(); this.loadEvents(); };
+    this.registerDomEvent(window, 'focus', reload);
+    this.registerDomEvent(document, 'visibilitychange', () => { if (!document.hidden) reload(); });
+    this.registerInterval(window.setInterval(reload, 5 * MIN));
   }
 
   // Bring the widget to the current minute. It doesn't jump there: from the
@@ -234,7 +303,7 @@ class HomeView extends MarkdownRenderChild {
       this.rise = sun?.rise ?? this.wake;
       // Without a location the sky assumes a 6:30 sunrise and a 19:30 sunset.
       this.sun = sun ?? { rise: 390, set: 1170 };
-      if (this.itemsEl.childElementCount) { this.renderItems(); this.loadReminders(); }
+      if (this.itemsEl.childElementCount) { this.renderItems(); this.loadReminders(); this.loadEvents(); }
     }
     const remaining = Math.min(Math.max((this.bed - now) / (this.bed - this.wake), 0), 1);
     this.paint(now);
@@ -274,6 +343,95 @@ class HomeView extends MarkdownRenderChild {
 
     this.setClock(d);
     this.setRing(mode, remaining);
+    this.renderEvent(d);
+  }
+
+  async loadEvents() {
+    if (this.opts.calendar === 'off') return;
+    try {
+      const events = await nextEvents(this.opts.calendars);
+      if (!events) return;
+      this.events = events;
+      Object.assign(this.cache, { events, calendars: this.opts.calendars });
+    } catch (err) {
+      console.warn('Home View: could not read Apple Calendar', err);
+      return;
+    }
+    if (!this.gone) this.renderEvent(new Date(this.shownAt));
+  }
+
+  // "Your next event is X, in 2h 15min." Counted down with the clock; once an
+  // event starts, the next one today takes its place. With none left today it
+  // says so, and without Calendar (off, not a Mac, no icalBuddy) it is hidden.
+  renderEvent(d) {
+    const el = this.eventEl;
+    el.empty();
+    el.toggle(!!this.events);
+    if (!this.events) return;
+    const next = this.events.find((e) => e.start * 1000 > d.getTime() && dateKey(new Date(e.start * 1000)) === dateKey(d));
+    if (!next) {
+      el.appendText('You have no upcoming event for today. Enjoy your ');
+      el.createSpan({ cls: 'hv-key', text: 'freedom' });
+      el.appendText('.');
+      return;
+    }
+    el.appendText('Your next event is ');
+    el.createSpan({ cls: 'hv-key', text: next.title || 'untitled' });
+    el.appendText(', in ');
+    el.createSpan({ cls: 'hv-key hv-num', text: until(Math.ceil((next.start * 1000 - d.getTime()) / MIN)) });
+    el.appendText('.');
+  }
+
+  // "Play a song from your daylist." Once one plays, the line offers the next:
+  // "Play X by Y.", a song picked at random, and a click plays exactly that.
+  // Desktop Mac with the Spotify app only.
+  buildMusic(layout) {
+    const id = playlistId(this.opts.daylist);
+    if (!id || !Platform.isMacOS || !Platform.isDesktopApp) return;
+    const fs = require('fs');
+    if (!spotifyApps().some((p) => fs.existsSync(p))) return;
+    const el = layout.createEl('p', { cls: 'hv-music', attr: { role: 'button', tabindex: '0' } });
+    const icon = el.createSpan('hv-music-icon');
+    setIcon(icon, 'play');
+    const text = el.createSpan();
+    const show = (song) => {
+      text.empty();
+      if (!song) {
+        text.appendText('Play a song from your ');
+        text.createSpan({ cls: 'hv-key', text: 'daylist' });
+        text.appendText('.');
+        return;
+      }
+      text.appendText('Play ');
+      text.createSpan({ cls: 'hv-key', text: song.title });
+      if (song.subtitle) text.appendText(` by ${song.subtitle}`);
+      text.appendText('.');
+    };
+    // Any song but the one just played, so the offer is always a new one.
+    const pick = (tracks, not) => {
+      const pool = tracks.filter((t) => t.uri !== not);
+      if (!pool.length) throw new Error('no playable songs on the embed page');
+      return pool[Math.floor(Math.random() * pool.length)];
+    };
+    show(this.cache.nextSong);
+    const play = async () => {
+      if (el.hasClass('is-busy')) return;
+      el.addClass('is-busy');
+      try {
+        // The song on offer, or a random one the first time. The list is
+        // fetched again after, so the next offer follows the daylist as it changes.
+        const song = this.cache.nextSong ?? pick(await playlistTracks(id));
+        await playInPlaylist(song.uri, id);
+        this.cache.nextSong = pick(await playlistTracks(id), song.uri);
+        if (!this.gone) show(this.cache.nextSong);
+      } catch (err) {
+        console.warn('Home View: could not play the daylist', err);
+        new Notice('Could not play your daylist in Spotify.');
+      }
+      el.removeClass('is-busy');
+    };
+    el.addEventListener('click', play);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(); } });
   }
 
   // A bare analog clock: an outline, four quiet marks, two hands, a dot.
@@ -433,7 +591,9 @@ class HomeView extends MarkdownRenderChild {
     const out = [];
     const walk = (f) => f.children.forEach((c) => (c instanceof TFolder ? walk(c) : out.push(c)));
     walk(folder);
-    return out.map((file) => {
+    // A note whose `descriptive` (a string or a list) says `done` is finished.
+    const isDone = (fm) => [fm.descriptive ?? []].flat().some((v) => String(v).trim().toLowerCase() === 'done');
+    return out.filter((file) => !isDone(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {})).map((file) => {
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
       const due = fm['due date'] ?? fm.due;
       // Soonest due first; notes without a due date after them, by name.
@@ -454,6 +614,7 @@ class HomeView extends MarkdownRenderChild {
       this.reminders = fetched.filter((r) => !r.isCompleted && !leaving.some((x) => x.id === r.id))
         .concat(leaving)
         .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
+      this.cacheReminders();
     } catch (err) {
       console.warn('Home View: could not read Apple Reminders', err);
       return;
@@ -484,6 +645,12 @@ class HomeView extends MarkdownRenderChild {
     li?.setAttr('aria-checked', String(done));
     this.renderSay();
     this.scheduleLeave(r);
+    this.cacheReminders();
+  }
+
+  // Ticked ones are left out, so a fresh render doesn't bring them back.
+  cacheReminders() {
+    this.cache.reminders = this.reminders.filter((r) => !r.isCompleted).map(({ leave, ...r }) => r);
   }
 
   scheduleLeave(r) {
@@ -551,7 +718,7 @@ class HomeView extends MarkdownRenderChild {
     p.empty();
     const left = this.reminders.filter((r) => !r.isCompleted).length;
     // Only the counts above zero are said. With both, each gets its own line.
-    const parts = [[items.length, 'remaining todo'], [left, 'reminder']].filter(([n]) => n);
+    const parts = [[items.length, 'action item'], [left, 'reminder']].filter(([n]) => n);
     if (!parts.length) {
       p.createSpan({ cls: 'hv-key', text: 'Congratulations' });
       p.appendText(', you are all clear for today.');
@@ -569,6 +736,7 @@ class HomeView extends MarkdownRenderChild {
 
 module.exports = class HomeViewPlugin extends Plugin {
   onload() {
+    this.cache = { reminders: [], events: null, calendars: '', nextSong: null };
     this.registerMarkdownCodeBlockProcessor('home-view', (source, el, ctx) => {
       ctx.addChild(new HomeView(this, el, parseOptions(source), ctx.sourcePath));
     });

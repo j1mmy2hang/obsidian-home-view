@@ -9,11 +9,13 @@ An Obsidian code block for a home page that talks to you, in plain sentences:
 > You have **5h 15min** left for today.
 >
 > You have
-> **2** remaining todos,
+> **2** action items,
 > **1** reminder.
 > ○ Problem set 5
 > ○ Read chapter 3
 > ○ Do laundry `16:30`
+>
+> Your next event is **Office hours**, in **2h 15min**.
 
 Beside the text sit two dials: a small analog clock, and a ring showing the
 percent of your waking day that is left. Behind it all, the pane takes the colour
@@ -33,11 +35,20 @@ sun, blended minute by minute.
   property first. Click a line to open the note; Cmd/Ctrl-click opens it in a new tab.
   When the folder is empty, it says you are all clear.
 - **Apple Reminders (macOS).** Reminders that are overdue or due today follow the
-  todos, each with its due date in a small pill (red once past). Click one to mark
+  action items, each with its due date in a small pill (red once past). Click one to mark
   it done in Reminders; it is struck through, then slides out of the list. Needs
   [remindctl](https://github.com/openclaw/remindctl) (`brew install steipete/tap/remindctl`)
   and Reminders access for Obsidian. Not available on iOS or Android, where plugins
   cannot reach Reminders.
+- **Apple Calendar (macOS).** Below the items, your next event today and how
+  long until it starts, counting down with the clock. All-day events are skipped.
+  With nothing left today, it tells you to enjoy your freedom.
+  Needs [icalBuddy](https://hasseg.org/icalBuddy/) (`brew install ical-buddy`)
+  and Calendar access for Obsidian.
+- **Daylist (macOS).** With `daylist:` set to a Spotify playlist link, a line under
+  the items sentence plays a random song from it in the Spotify app. After that it
+  offers the next one, "Play X by Y.", picked at random; a click plays that song. The songs come from the playlist's public embed page,
+  since Spotify's Web API no longer serves its own playlists. Needs the Spotify app.
 - **Layout.** On a wide pane: prose on the left, dials and items on the right.
   On a phone or narrow pane everything stacks.
 - Updates on every minute, and whenever a note enters, leaves or changes in `folder`.
@@ -57,6 +68,9 @@ lon:
 sky: on
 dev: off
 reminders: on
+calendar: on
+calendars:
+daylist:
 ```
 ````
 
@@ -69,7 +83,9 @@ keeps the note's normal background; the emphasised words and the ring then take
 the sky's colour of the hour instead.
 
 `dev: on` adds a corner time slider to preview any hour. `reminders: off` leaves
-Apple Reminders out.
+Apple Reminders out, and `calendar: off` the next event. `calendars:` limits the
+next event to some calendars, comma-separated: their names, or their IDs where two
+share a name (`icalBuddy -uid calendars` lists both). Blank means every calendar.
 
 ## Install
 
