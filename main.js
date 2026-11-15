@@ -1,4 +1,4 @@
-const { Plugin, MarkdownRenderChild, TFolder, Keymap, Notice, Platform, setIcon, requestUrl } = require('obsidian');
+const { Plugin, MarkdownRenderChild, TFolder, Keymap, Notice, Platform, setIcon } = require('obsidian');
 
 // Each can be set by a `key: value` line in the block. Without `lat:` / `lon:`
 // there is no sunrise, so the early-riser message never shows.
@@ -9,11 +9,9 @@ const { Plugin, MarkdownRenderChild, TFolder, Keymap, Notice, Platform, setIcon,
 // `calendar: off` leaves out the next Apple Calendar event (needs icalBuddy, on a Mac).
 // `calendars:` limits it to some calendars: names, or IDs where two share a
 // name, comma-separated (`icalBuddy calendars` lists both). Blank = all.
-// `daylist:` takes a Spotify playlist link and adds a line that plays a random
-// song from it in the Spotify app (on a Mac). Blank = no line.
 const DEFAULTS = {
   name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '',
-  sky: 'on', dev: 'off', reminders: 'on', calendar: 'on', calendars: '', daylist: '',
+  sky: 'on', dev: 'off', reminders: 'on', calendar: 'on', calendars: '',
 };
 const MIN = 60000;
 const DAY = 24 * 60 * MIN;
@@ -159,27 +157,6 @@ function nextEvents(calendars) {
   });
 }
 
-// Spotify. The Web API no longer lets apps read Spotify-made playlists such as
-// daylist, but the playlist's public embed page lists its songs, no login. One
-// is picked at random and the Spotify app plays it through its own AppleScript,
-// inside the playlist, so the songs after it are the daylist's too.
-// A function, as `process` is not there on a phone.
-const spotifyApps = () => ['/Applications/Spotify.app', `${process.env.HOME}/Applications/Spotify.app`];
-const playlistId = (link) => link.match(/playlist[:/]([A-Za-z0-9]{22})/)?.[1] ?? null;
-async function playlistTracks(id) {
-  const html = (await requestUrl(`https://open.spotify.com/embed/playlist/${id}`)).text;
-  const json = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/)?.[1];
-  const list = JSON.parse(json ?? 'null')?.props?.pageProps?.state?.data?.entity?.trackList ?? [];
-  return list.filter((t) => t.isPlayable !== false && t.uri?.startsWith('spotify:track:'));
-}
-function playInPlaylist(track, id) {
-  const script = 'on run argv\ntell application "Spotify" to play track (item 1 of argv) in context (item 2 of argv)\nend run';
-  return new Promise((resolve, reject) => {
-    require('child_process').execFile('/usr/bin/osascript', ['-e', script, track, `spotify:playlist:${id}`], { timeout: 15000 },
-      (err) => (err ? reject(err) : resolve()));
-  });
-}
-
 class HomeView extends MarkdownRenderChild {
   constructor(plugin, el, opts, sourcePath) {
     super(el);
@@ -213,7 +190,6 @@ class HomeView extends MarkdownRenderChild {
     this.buildClock(dials.createDiv({ cls: 'hv-dial hv-clock', attr: { role: 'img' } }));
     this.buildRing(dials.createDiv({ cls: 'hv-dial hv-ring', attr: { role: 'img' } }));
     this.itemsEl = layout.createDiv('hv-items');
-    this.buildMusic(layout);
     this.eventEl = layout.createEl('p', 'hv-event');
 
     // Start from what the last widget fetched, so a fresh render (Reading view,
@@ -382,58 +358,6 @@ class HomeView extends MarkdownRenderChild {
     el.appendText('.');
   }
 
-  // "Play a song from your daylist." Once one plays, the line offers the next:
-  // "Play X by Y.", a song picked at random, and a click plays exactly that.
-  // Desktop Mac with the Spotify app only.
-  buildMusic(layout) {
-    const id = playlistId(this.opts.daylist);
-    if (!id || !Platform.isMacOS || !Platform.isDesktopApp) return;
-    const fs = require('fs');
-    if (!spotifyApps().some((p) => fs.existsSync(p))) return;
-    const el = layout.createEl('p', { cls: 'hv-music', attr: { role: 'button', tabindex: '0' } });
-    const icon = el.createSpan('hv-music-icon');
-    setIcon(icon, 'play');
-    const text = el.createSpan();
-    const show = (song) => {
-      text.empty();
-      if (!song) {
-        text.appendText('Play a song from your ');
-        text.createSpan({ cls: 'hv-key', text: 'daylist' });
-        text.appendText('.');
-        return;
-      }
-      text.appendText('Play ');
-      text.createSpan({ cls: 'hv-key', text: song.title });
-      if (song.subtitle) text.appendText(` by ${song.subtitle}`);
-      text.appendText('.');
-    };
-    // Any song but the one just played, so the offer is always a new one.
-    const pick = (tracks, not) => {
-      const pool = tracks.filter((t) => t.uri !== not);
-      if (!pool.length) throw new Error('no playable songs on the embed page');
-      return pool[Math.floor(Math.random() * pool.length)];
-    };
-    show(this.cache.nextSong);
-    const play = async () => {
-      if (el.hasClass('is-busy')) return;
-      el.addClass('is-busy');
-      try {
-        // The song on offer, or a random one the first time. The list is
-        // fetched again after, so the next offer follows the daylist as it changes.
-        const song = this.cache.nextSong ?? pick(await playlistTracks(id));
-        await playInPlaylist(song.uri, id);
-        this.cache.nextSong = pick(await playlistTracks(id), song.uri);
-        if (!this.gone) show(this.cache.nextSong);
-      } catch (err) {
-        console.warn('Home View: could not play the daylist', err);
-        new Notice('Could not play your daylist in Spotify.');
-      }
-      el.removeClass('is-busy');
-    };
-    el.addEventListener('click', play);
-    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(); } });
-  }
-
   // A bare analog clock: an outline, four quiet marks, two hands, a dot.
   buildClock(el) {
     const marks = [0, 90, 180, 270]
@@ -592,8 +516,15 @@ class HomeView extends MarkdownRenderChild {
     const walk = (f) => f.children.forEach((c) => (c instanceof TFolder ? walk(c) : out.push(c)));
     walk(folder);
     // A note whose `descriptive` (a string or a list) says `done` is finished.
-    const isDone = (fm) => [fm.descriptive ?? []].flat().some((v) => String(v).trim().toLowerCase() === 'done');
-    return out.filter((file) => !isDone(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {})).map((file) => {
+    // A recurring todo (`todo` + `recurring`) lives in the folder for good;
+    // it is not an action item for today.
+    const values = (fm) => [fm.descriptive ?? []].flat().map((v) => String(v).trim().toLowerCase());
+    const isDone = (v) => v.includes('done');
+    const isRecurring = (v) => v.includes('todo') && v.includes('recurring');
+    return out.filter((file) => {
+      const v = values(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {});
+      return !isDone(v) && !isRecurring(v);
+    }).map((file) => {
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
       const due = fm['due date'] ?? fm.due;
       // Soonest due first; notes without a due date after them, by name.
@@ -736,7 +667,7 @@ class HomeView extends MarkdownRenderChild {
 
 module.exports = class HomeViewPlugin extends Plugin {
   onload() {
-    this.cache = { reminders: [], events: null, calendars: '', nextSong: null };
+    this.cache = { reminders: [], events: null, calendars: '' };
     this.registerMarkdownCodeBlockProcessor('home-view', (source, el, ctx) => {
       ctx.addChild(new HomeView(this, el, parseOptions(source), ctx.sourcePath));
     });

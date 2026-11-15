@@ -9,6 +9,8 @@
   --hv-beat: 0.6em;
   font-size: 1.12em;
   line-height: 1.85;
+  /* No single word left alone on a last line; inherited by every line below. */
+  text-wrap: pretty;
   color: var(--text-muted);
   max-width: 40em;
   container-type: inline-size;
@@ -42,7 +44,6 @@
      greet  greet
      stanza dials
      say    list
-     music  list
      event  event                                                       */
 .hv-layout {
   /* The dials keep one size in both layouts. */
@@ -75,7 +76,6 @@
 }
 
 .hv-items,
-.home-view .hv-music,
 .home-view .hv-event {
   margin-top: calc(var(--hv-beat) * 5);
 }
@@ -85,9 +85,7 @@
     width: auto;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas: "greet greet" "stanza dials" "say list" "music list" "event event";
-    /* A long list stretches the music row, not the gap under the sentence. */
-    grid-template-rows: auto auto auto 1fr auto;
+    grid-template-areas: "greet greet" "stanza dials" "say list" "event event";
     column-gap: calc(var(--hv-beat) * 7);
   }
 
@@ -124,50 +122,11 @@
     grid-area: list;
   }
 
-  .home-view .hv-music {
-    grid-area: music;
-    align-self: start;
-    width: 0;
-    min-width: 100%;
-  }
-
   .home-view .hv-event {
     grid-area: event;
   }
 }
 
-/* The daylist line: a play icon, then the sentence; hover tints both. */
-.home-view .hv-music {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5em;
-  cursor: pointer;
-  outline: none;
-}
-
-.hv-music-icon {
-  flex: none;
-  position: relative;
-  top: 0.15em;
-  color: var(--text-faint);
-  transition: color 0.2s ease;
-}
-
-.hv-music-icon svg {
-  width: 0.9em;
-  height: 0.9em;
-}
-
-.home-view .hv-music:hover .hv-music-icon,
-.home-view .hv-music:focus-visible .hv-music-icon {
-  color: var(--hv-accent);
-}
-
-.home-view .hv-music.is-busy {
-  cursor: progress;
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
-}
 
 .hv-key {
   color: var(--hv-accent);

@@ -32,7 +32,8 @@ sun, blended minute by minute.
   `bed` it says you should be sleeping by now (the ring shows a moon). Between
   sunrise and `wake` it congratulates you on getting up early (the ring shows a sun).
 - **Items.** Every file in `folder` (and its subfolders), soonest `due date`
-  property first. Click a line to open the note; Cmd/Ctrl-click opens it in a new tab.
+  property first. Notes whose `descriptive` holds `done`, and recurring todos
+  (`todo` and `recurring`), are left out. Click a line to open the note; Cmd/Ctrl-click opens it in a new tab.
   When the folder is empty, it says you are all clear.
 - **Apple Reminders (macOS).** Reminders that are overdue or due today follow the
   action items, each with its due date in a small pill (red once past). Click one to mark
@@ -45,10 +46,6 @@ sun, blended minute by minute.
   With nothing left today, it tells you to enjoy your freedom.
   Needs [icalBuddy](https://hasseg.org/icalBuddy/) (`brew install ical-buddy`)
   and Calendar access for Obsidian.
-- **Daylist (macOS).** With `daylist:` set to a Spotify playlist link, a line under
-  the items sentence plays a random song from it in the Spotify app. After that it
-  offers the next one, "Play X by Y.", picked at random; a click plays that song. The songs come from the playlist's public embed page,
-  since Spotify's Web API no longer serves its own playlists. Needs the Spotify app.
 - **Layout.** On a wide pane: prose on the left, dials and items on the right.
   On a phone or narrow pane everything stacks.
 - Updates on every minute, and whenever a note enters, leaves or changes in `folder`.
@@ -70,7 +67,6 @@ dev: off
 reminders: on
 calendar: on
 calendars:
-daylist:
 ```
 ````
 
