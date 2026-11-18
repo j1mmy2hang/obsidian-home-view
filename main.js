@@ -9,13 +9,202 @@ const { Plugin, MarkdownRenderChild, TFolder, Keymap, Notice, Platform, setIcon 
 // `calendar: off` leaves out the next Apple Calendar event (needs icalBuddy, on a Mac).
 // `calendars:` limits it to some calendars: names, or IDs where two share a
 // name, comma-separated (`icalBuddy calendars` lists both). Blank = all.
+// `name: random` greets a different invented person each day.
+// `quote: off` hides the daily quote under the greeting.
 const DEFAULTS = {
-  name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '',
+  quote: 'on', name: '', folder: 'today', wake: '8:00', bed: '23:00', lat: '', lon: '',
   sky: 'on', dev: 'off', reminders: 'on', calendar: 'on', calendars: '',
 };
+const FIRST_NAMES = [
+  'Ansel', 'Thaddeus', 'Ignatius', 'Leopold', 'Cassius', 'Ambrose', 'Lucian', 'Barnaby',
+  'Florian', 'Evander', 'Caspian', 'Laszlo', 'Osric', 'Percival', 'Remy', 'Wendell',
+  'Ellery', 'Horatio', 'Isidore', 'Linus', 'Octavian', 'Quentin', 'Rafferty', 'Ulysses',
+  'Valentin', 'Waldo', 'Yannick', 'Zephyr', 'Alaric', 'Bastian', 'Cormac', 'Dashiell',
+  'Emeric', 'Gideon', 'Hollis', 'Ivo', 'Kasimir', 'Lorcan', 'Mortimer', 'Orson',
+  'Peregrine', 'Rufus', 'Sacha', 'Tycho', 'Lysander', 'Anselm', 'Ciaran', 'Benedikt',
+  'Aurelio', 'Bram', 'Crispin', 'Desmond', 'Evren', 'Fitz', 'Halloran', 'Jarek',
+  'Kenzo', 'Leander', 'Matthias', 'Nikodem', 'Oberon', 'Piers', 'Rainer', 'Soren',
+  'Teodor', 'Wystan', 'Ximo', 'Ignacio', 'Auberon', 'Casimir', 'Dorian', 'Eamon',
+];
+const LAST_NAMES = [
+  'Ashgrove', 'Thistlewood', 'Marchetti', 'Holloway', 'Whitlock', 'Pemberton', 'Ravensworth',
+  'Fairweather', 'Quill', 'Larkspur', 'Montague', 'Calloway', 'Drummond', 'Everhart',
+  'Galloway', 'Hartwell', 'Kestrel', 'Lockwood', 'Merriweather', 'Nightingale', 'Penhaligon',
+  'Rookwood', 'Thornbury', 'Underhill', 'Vale', 'Wexley', 'Yardley', 'Castellane',
+  'Delacroix', 'Ferrante', 'Gaspard', 'Moreau', 'Lindqvist', 'Sørensen', 'Aalto', 'Kovač',
+  'Novak', 'Valcourt', 'Brightwater', 'Darrow', 'Ellsworth', 'Greaves', 'Ashcombe',
+  'Blackthorn', 'Corrigan', 'Dunmore', 'Fenwick', 'Grimaldi', 'Halvorsen', 'Inchbald',
+  'Jessop', 'Kilbride', 'Lazarev', 'Mallory', 'Orsini', 'Pryce', 'Quintero', 'Rasmussen',
+  'Strand', 'Tallis', 'Vasquez', 'Winterbourne', 'Okafor', 'Achterberg', 'Belmonte',
+];
 const MIN = 60000;
 const DAY = 24 * 60 * MIN;
 let inkIds = 0;
+
+// A number in [0, 1) fixed by a string, so a day's picks stay the same all day.
+function seeded(key) {
+  let h = 2166136261;
+  for (const c of key) h = Math.imul(h ^ c.codePointAt(0), 16777619);
+  h = Math.imul(h ^ (h >>> 15), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  return ((h ^ (h >>> 16)) >>> 0) / 2 ** 32;
+}
+
+function dailyName(day) {
+  const pick = (list, salt) => list[Math.floor(seeded(day + salt) * list.length)];
+  return `${pick(FIRST_NAMES, '/first')} ${pick(LAST_NAMES, '/last')}`;
+}
+
+// One quote per day from QUOTE_START, in order, so no day repeats another.
+// Append new quotes at the end only: never reorder or delete.
+const QUOTE_START = '2026-11-16';
+const QUOTES = [
+  {"text": "There are worse crimes than burning books. One of them is not reading them.", "by": "Joseph Brodsky"},
+  {"text": "A wealth of information creates a poverty of attention.", "by": "Herbert Simon"},
+  {"text": "Wrong life cannot be lived rightly.", "by": "Theodor Adorno, Minima Moralia"},
+  {"text": "The universe is not only queerer than we suppose, but queerer than we can suppose.", "by": "J. B. S. Haldane, Possible Worlds"},
+  {"text": "Interpretation is the revenge of the intellect upon art.", "by": "Susan Sontag, Against Interpretation"},
+  {"text": "The aspects of things that are most important for us are hidden because of their simplicity and familiarity.", "by": "Ludwig Wittgenstein, Philosophical Investigations"},
+  {"text": "The strong do what they can and the weak suffer what they must.", "by": "Thucydides, History of the Peloponnesian War"},
+  {"text": "Time is the substance I am made of. Time is a river which sweeps me along, but I am the river.", "by": "Jorge Luis Borges, A New Refutation of Time"},
+  {"text": "Not knowing when the dawn will come, I open every door.", "by": "Emily Dickinson"},
+  {"text": "We are what we pretend to be, so we must be careful about what we pretend to be.", "by": "Kurt Vonnegut, Mother Night"},
+  {"text": "It requires a very unusual mind to undertake the analysis of the obvious.", "by": "Alfred North Whitehead, Science and the Modern World"},
+  {"text": "Out of the crooked timber of humanity, no straight thing was ever made.", "by": "Immanuel Kant"},
+  {"text": "What we call the beginning is often the end. And to make an end is to make a beginning.", "by": "T. S. Eliot, Little Gidding"},
+  {"text": "人生如逆旅，我亦是行人。", "by": "苏轼，《临江仙·送钱穆父》"},
+  {"text": "Photography is truth. The cinema is truth twenty-four times per second.", "by": "Jean-Luc Godard, Le Petit Soldat"},
+  {"text": "Angels can fly because they take themselves lightly.", "by": "G. K. Chesterton, Orthodoxy"},
+  {"text": "If men define situations as real, they are real in their consequences.", "by": "W. I. Thomas and Dorothy Swaine Thomas"},
+  {"text": "Everyone knows the usefulness of the useful, but no one knows the usefulness of the useless.", "by": "Zhuangzi"},
+  {"text": "To be rooted is perhaps the most important and least recognized need of the human soul.", "by": "Simone Weil, The Need for Roots"},
+  {"text": "Point of view is worth 80 IQ points.", "by": "Alan Kay"},
+  {"text": "Nobody ever discovered ugliness through photographs.", "by": "Susan Sontag, On Photography"},
+  {"text": "Anxiety is the dizziness of freedom.", "by": "Søren Kierkegaard, The Concept of Anxiety"},
+  {"text": "The question of whether machines can think is about as relevant as the question of whether submarines can swim.", "by": "Edsger Dijkstra"},
+  {"text": "The fish trap exists because of the fish; once you've gotten the fish, you can forget the trap. Words exist because of meaning; once you've gotten the meaning, you can forget the words. Where can I find a man who has forgotten words so I can have a word with him?", "by": "Zhuangzi"},
+  {"text": "Thirty spokes share one hub; it is the empty space that makes the cart useful.", "by": "Laozi, Tao Te Ching"},
+  {"text": "When I play with my cat, who knows if I am not a pastime to her more than she is to me?", "by": "Michel de Montaigne, Essays"},
+  {"text": "Grace fills empty spaces, but it can only enter where there is a void to receive it.", "by": "Simone Weil, Gravity and Grace"},
+  {"text": "The purpose of a system is what it does.", "by": "Stafford Beer"},
+  {"text": "He who cannot draw on three thousand years is living from hand to mouth.", "by": "Johann Wolfgang von Goethe, West-Eastern Divan"},
+  {"text": "I am rooted, but I flow.", "by": "Virginia Woolf, The Waves"},
+  {"text": "The relation between what we see and what we know is never settled.", "by": "John Berger, Ways of Seeing"},
+  {"text": "Seek and learn to recognize who and what, in the midst of the inferno, are not inferno, then make them endure, give them space.", "by": "Italo Calvino, Invisible Cities"},
+  {"text": "I will have spent my life trying to understand the function of remembering, which is not the opposite of forgetting, but rather its lining.", "by": "Chris Marker, Sans Soleil"},
+  {"text": "Humankind cannot bear very much reality.", "by": "T. S. Eliot, Burnt Norton"},
+  {"text": "People are trapped in history and history is trapped in them.", "by": "James Baldwin, Stranger in the Village"},
+  {"text": "To go wrong in one's own way is better than to go right in someone else's.", "by": "Fyodor Dostoevsky, Crime and Punishment"},
+  {"text": "If a lion could talk, we could not understand him.", "by": "Ludwig Wittgenstein, Philosophical Investigations"},
+  {"text": "I cannot say whether things will get better if we change; what I can say is they must change if they are to get better.", "by": "Georg Christoph Lichtenberg"},
+  {"text": "You must change your life.", "by": "Rainer Maria Rilke, Archaic Torso of Apollo"},
+  {"text": "Man is least himself when he talks in his own person. Give him a mask, and he will tell you the truth.", "by": "Oscar Wilde, The Critic as Artist"},
+  {"text": "Where there is power, there is resistance.", "by": "Michel Foucault, The History of Sexuality"},
+  {"text": "All things excellent are as difficult as they are rare.", "by": "Baruch Spinoza, Ethics"},
+  {"text": "For beauty is nothing but the beginning of terror, which we are still just able to endure.", "by": "Rainer Maria Rilke, Duino Elegies"},
+  {"text": "If man were never to fade away like the dews of Adashino, how things would lose their power to move us! The most precious thing in life is its uncertainty.", "by": "Yoshida Kenkō, Essays in Idleness"},
+  {"text": "The cradle rocks above an abyss, and common sense tells us that our existence is but a brief crack of light between two eternities of darkness.", "by": "Vladimir Nabokov, Speak, Memory"},
+  {"text": "The poet is a faker who's so good at his act he even fakes the pain of pain he feels in fact.", "by": "Fernando Pessoa, Autopsychography"},
+  {"text": "Monsters exist, but they are too few in number to be truly dangerous. More dangerous are the common men.", "by": "Primo Levi"},
+  {"text": "A language that doesn't affect the way you think about programming is not worth knowing.", "by": "Alan Perlis, Epigrams on Programming"},
+  {"text": "The owl of Minerva spreads its wings only with the falling of the dusk.", "by": "G. W. F. Hegel, Philosophy of Right"},
+  {"text": "The fox knows many things, but the hedgehog knows one big thing.", "by": "Archilochus"},
+  {"text": "Talent hits a target no one else can hit. Genius hits a target no one else can see.", "by": "Arthur Schopenhauer"},
+  {"text": "Cities, like dreams, are made of desires and fears.", "by": "Italo Calvino, Invisible Cities"},
+  {"text": "The only true voyage of discovery would be not to visit strange lands but to possess other eyes.", "by": "Marcel Proust, The Captive"},
+  {"text": "There is no document of civilization which is not at the same time a document of barbarism.", "by": "Walter Benjamin, Theses on the Philosophy of History"},
+  {"text": "A complex system that works is invariably found to have evolved from a simple system that worked.", "by": "John Gall, Systemantics"},
+  {"text": "To study the self is to forget the self.", "by": "Dōgen, Genjōkōan"},
+  {"text": "Fact creates norms, and truth illumination.", "by": "Werner Herzog, Minnesota Declaration"},
+  {"text": "Real generosity toward the future lies in giving all to the present.", "by": "Albert Camus, The Rebel"},
+  {"text": "Make visible what, without you, might perhaps never have been seen.", "by": "Robert Bresson, Notes on the Cinematographer"},
+  {"text": "To photograph is to appropriate the thing photographed.", "by": "Susan Sontag, On Photography"},
+  {"text": "Nature loves to hide.", "by": "Heraclitus"},
+  {"text": "We are all patchwork, and so shapeless and diverse in composition that each bit, each moment, plays its own game.", "by": "Michel de Montaigne, Essays"},
+  {"text": "In individuals, insanity is rare; but in groups, parties, nations and epochs, it is the rule.", "by": "Friedrich Nietzsche, Beyond Good and Evil"},
+  {"text": "All real living is meeting.", "by": "Martin Buber, I and Thou"},
+  {"text": "A thing is not necessarily true because a man dies for it.", "by": "Oscar Wilde, The Portrait of Mr. W. H."},
+  {"text": "What we observe is not nature itself, but nature exposed to our method of questioning.", "by": "Werner Heisenberg, Physics and Philosophy"},
+  {"text": "此中有真意，欲辨已忘言。", "by": "陶渊明，《饮酒·其五》"},
+  {"text": "In mathematics you don't understand things. You just get used to them.", "by": "John von Neumann"},
+  {"text": "To think is to forget differences, generalize, make abstractions.", "by": "Jorge Luis Borges, Funes the Memorious"},
+  {"text": "We are so accustomed to disguise ourselves to others that in the end we become disguised to ourselves.", "by": "François de La Rochefoucauld, Maxims"},
+  {"text": "The crisis consists precisely in the fact that the old is dying and the new cannot be born; in this interregnum a great variety of morbid symptoms appear.", "by": "Antonio Gramsci, Prison Notebooks"},
+  {"text": "The function of the imagination is not to make strange things settled, so much as to make settled things strange.", "by": "G. K. Chesterton, The Defendant"},
+  {"text": "To define is to limit.", "by": "Oscar Wilde, The Picture of Dorian Gray"},
+  {"text": "The way up and the way down are one and the same.", "by": "Heraclitus"},
+  {"text": "你未看此花时，此花与汝心同归于寂；你来看此花时，则此花颜色一时明白起来。", "by": "王阳明，《传习录》"},
+  {"text": "Seeing comes before words.", "by": "John Berger, Ways of Seeing"},
+  {"text": "Someone will remember us, I say, even in another time.", "by": "Sappho"},
+  {"text": "The only thing that makes life possible is permanent, intolerable uncertainty: not knowing what comes next.", "by": "Ursula K. Le Guin, The Left Hand of Darkness"},
+  {"text": "The trouble with our times is that the future is not what it used to be.", "by": "Paul Valéry"},
+  {"text": "A mathematician, like a painter or a poet, is a maker of patterns.", "by": "G. H. Hardy, A Mathematician's Apology"},
+  {"text": "To live is to be other.", "by": "Fernando Pessoa, The Book of Disquiet"},
+  {"text": "The tragedy of old age is not that one is old, but that one is young.", "by": "Oscar Wilde, The Picture of Dorian Gray"},
+  {"text": "Man is only a reed, the weakest in nature, but he is a thinking reed.", "by": "Blaise Pascal, Pensées"},
+  {"text": "When a measure becomes a target, it ceases to be a good measure.", "by": "Marilyn Strathern, after Charles Goodhart"},
+  {"text": "Don't think, but look!", "by": "Ludwig Wittgenstein, Philosophical Investigations"},
+  {"text": "We are the bees of the invisible.", "by": "Rainer Maria Rilke, letter to Witold Hulewicz"},
+  {"text": "Nothing is more real than nothing.", "by": "Samuel Beckett, Malone Dies"},
+  {"text": "The spectacle is not a collection of images, but a social relation among people, mediated by images.", "by": "Guy Debord, The Society of the Spectacle"},
+  {"text": "I prefer the absurdity of writing poems to the absurdity of not writing poems.", "by": "Wisława Szymborska, Possibilities"},
+  {"text": "Mirrors and copulation are abominable, because they increase the number of men.", "by": "Jorge Luis Borges, Tlön, Uqbar, Orbis Tertius"},
+  {"text": "The struggle of man against power is the struggle of memory against forgetting.", "by": "Milan Kundera, The Book of Laughter and Forgetting"},
+  {"text": "Imaginary evil is romantic and varied; real evil is gloomy, monotonous, barren, boring. Imaginary good is boring; real good is always new, marvellous, intoxicating.", "by": "Simone Weil, Gravity and Grace"},
+  {"text": "Storytelling reveals meaning without committing the error of defining it.", "by": "Hannah Arendt, Men in Dark Times"},
+  {"text": "Philosophy is a battle against the bewitchment of our intelligence by means of language.", "by": "Ludwig Wittgenstein, Philosophical Investigations"},
+  {"text": "It is better to fail in originality than to succeed in imitation.", "by": "Herman Melville, Hawthorne and His Mosses"},
+  {"text": "If there is a sense of reality, there must also be a sense of possibility.", "by": "Robert Musil, The Man Without Qualities"},
+  {"text": "Hypocrisy is the homage vice pays to virtue.", "by": "François de La Rochefoucauld, Maxims"},
+  {"text": "We have art in order not to die of the truth.", "by": "Friedrich Nietzsche"},
+  {"text": "We don't want to conquer the cosmos, we simply want to extend the boundaries of Earth to the frontiers of the cosmos. We don't need other worlds. We need mirrors.", "by": "Stanisław Lem, Solaris"},
+  {"text": "Everything we see hides another thing; we always want to see what is hidden by what we see.", "by": "René Magritte"},
+  {"text": "Information is a difference which makes a difference.", "by": "Gregory Bateson"},
+  {"text": "We look at the present through a rear-view mirror. We march backwards into the future.", "by": "Marshall McLuhan, The Medium Is the Massage"},
+  {"text": "The sad truth is that most evil is done by people who never make up their minds to be good or evil.", "by": "Hannah Arendt, The Life of the Mind"},
+  {"text": "Convictions are more dangerous enemies of truth than lies.", "by": "Friedrich Nietzsche, Human, All Too Human"},
+  {"text": "There is an infinite amount of hope, but not for us.", "by": "Franz Kafka"},
+  {"text": "The butterfly counts not months but moments, and has time enough.", "by": "Rabindranath Tagore, Fireflies"},
+  {"text": "Hell is not to love any more.", "by": "Georges Bernanos, The Diary of a Country Priest"},
+  {"text": "In the beginner's mind there are many possibilities, but in the expert's there are few.", "by": "Shunryu Suzuki, Zen Mind, Beginner's Mind"},
+  {"text": "A cage went in search of a bird.", "by": "Franz Kafka, Zürau Aphorisms"},
+  {"text": "A book is a mirror: if an ass peers into it, you can't expect an apostle to look out.", "by": "Georg Christoph Lichtenberg"},
+  {"text": "Civilization advances by extending the number of important operations which we can perform without thinking about them.", "by": "Alfred North Whitehead, An Introduction to Mathematics"},
+  {"text": "We can know more than we can tell.", "by": "Michael Polanyi, The Tacit Dimension"},
+  {"text": "We shape our tools and thereafter our tools shape us.", "by": "John Culkin, on Marshall McLuhan"},
+  {"text": "Everything has been said before, but since nobody listens we have to keep going back and beginning all over again.", "by": "André Gide"},
+  {"text": "The price of anything is the amount of life you exchange for it.", "by": "Henry David Thoreau, Walden"},
+  {"text": "But where danger is, grows the saving power also.", "by": "Friedrich Hölderlin, Patmos"},
+  {"text": "Reason is, and ought only to be the slave of the passions.", "by": "David Hume, A Treatise of Human Nature"},
+  {"text": "Every photograph is a certificate of presence.", "by": "Roland Barthes, Camera Lucida"},
+  {"text": "Vertigo is something other than the fear of falling. It is the voice of the emptiness below us which tempts and lures us.", "by": "Milan Kundera, The Unbearable Lightness of Being"},
+  {"text": "Are we to look at cherry blossoms only in full bloom, the moon only when it is cloudless?", "by": "Yoshida Kenkō, Essays in Idleness"},
+  {"text": "Love is the extremely difficult realisation that something other than oneself is real.", "by": "Iris Murdoch, The Sublime and the Good"},
+  {"text": "I am nothing. I'll always be nothing. I can't want to be something. But I have in me all the dreams of the world.", "by": "Fernando Pessoa (Álvaro de Campos), Tobacco Shop"},
+  {"text": "Build your film on white, on silence and on stillness.", "by": "Robert Bresson, Notes on the Cinematographer"},
+  {"text": "Man is a creature who makes pictures of himself and then comes to resemble the picture.", "by": "Iris Murdoch"},
+  {"text": "In a world that really has been turned on its head, the true is a moment of the false.", "by": "Guy Debord, The Society of the Spectacle"},
+  {"text": "To see what is in front of one's nose needs a constant struggle.", "by": "George Orwell, In Front of Your Nose"},
+  {"text": "The aim of art is to prepare a person for death, to plough and harrow his soul, rendering it capable of turning to good.", "by": "Andrei Tarkovsky, Sculpting in Time"},
+  {"text": "Life is not a series of gig lamps symmetrically arranged; life is a luminous halo, a semi-transparent envelope surrounding us from the beginning of consciousness to the end.", "by": "Virginia Woolf, Modern Fiction"},
+  {"text": "Curiosity is insubordination in its purest form.", "by": "Vladimir Nabokov, Bend Sinister"},
+  {"text": "Every exit is an entry somewhere else.", "by": "Tom Stoppard, Rosencrantz and Guildenstern Are Dead"},
+  {"text": "We all have strength enough to endure the misfortunes of others.", "by": "François de La Rochefoucauld, Maxims"},
+  {"text": "We find beauty not in the thing itself but in the patterns of shadows, the light and the darkness, that one thing against another creates.", "by": "Jun'ichirō Tanizaki, In Praise of Shadows"},
+  {"text": "The opposite of a correct statement is a false statement. But the opposite of a profound truth may well be another profound truth.", "by": "Niels Bohr"},
+  {"text": "Mathematics is the art of giving the same name to different things.", "by": "Henri Poincaré"},
+  {"text": "Nothing in life is as important as you think it is, while you are thinking about it.", "by": "Daniel Kahneman, Thinking, Fast and Slow"},
+  {"text": "All the world is not a stage, but the crucial ways in which it isn't are not easy to specify.", "by": "Erving Goffman, Frame Analysis"},
+  {"text": "死是一件不必急于求成的事，死是一个必然会降临的节日。", "by": "史铁生，《我与地坛》"},
+  {"text": "We do not inhabit a country; we inhabit a language.", "by": "Emil Cioran"},
+  {"text": "The aim of argument, or of discussion, should not be victory, but progress.", "by": "Joseph Joubert"},
+];
+
+function dailyQuote(d) {
+  const [y, m, day] = QUOTE_START.split('-').map(Number);
+  const i = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(y, m - 1, day)) / DAY);
+  return { quote: QUOTES[i] ?? null, left: QUOTES.length - i };
+}
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const easeInOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
@@ -161,6 +350,7 @@ class HomeView extends MarkdownRenderChild {
   constructor(plugin, el, opts, sourcePath) {
     super(el);
     this.app = plugin.app;
+    this.plugin = plugin;
     this.cache = plugin.cache;
     this.opts = opts;
     this.sourcePath = sourcePath;
@@ -176,18 +366,19 @@ class HomeView extends MarkdownRenderChild {
     this.registerDomEvent(root, 'mousedown', (e) => e.stopPropagation());
     this.registerDomEvent(root, 'click', (e) => e.stopPropagation());
 
-    // Greeting on top; under it the stanza of time, date and day left, with the
-    // two dials beside it (below it on a narrow pane).
-    // One grid for the whole widget (see styles.css): prose left, dials and items right.
+    // One left-aligned column: greeting, quote, then the stanza of time, date
+    // and day left with the ring to its right, then the items and the event.
     const layout = root.createDiv('hv-layout');
     const head = layout.createDiv('hv-head');
     this.greetEl = head.createEl('p', 'hv-greeting');
-    const stanza = head.createDiv('hv-stanza');
+    this.quoteEl = head.createDiv('hv-quote');
+    // The "now" block: the stanza with the ring to its right, as one unit.
+    const now = head.createDiv('hv-now');
+    const stanza = now.createDiv('hv-stanza');
     this.nowEl = stanza.createEl('p');
     this.dateEl = stanza.createEl('p');
     this.statusEl = stanza.createEl('p');
-    const dials = head.createDiv('hv-dials');
-    this.buildClock(dials.createDiv({ cls: 'hv-dial hv-clock', attr: { role: 'img' } }));
+    const dials = now.createDiv('hv-dials');
     this.buildRing(dials.createDiv({ cls: 'hv-dial hv-ring', attr: { role: 'img' } }));
     this.itemsEl = layout.createDiv('hv-items');
     this.eventEl = layout.createEl('p', 'hv-event');
@@ -262,6 +453,23 @@ class HomeView extends MarkdownRenderChild {
     this.anim = requestAnimationFrame(step);
   }
 
+  renderQuote(d) {
+    const el = this.quoteEl;
+    if (this.opts.quote === 'off') return el.hide();
+    const today = dailyQuote(d);
+    el.empty();
+    if (!today?.quote) return el.hide();
+    el.show();
+    // The source runs on after the quote, on the same line.
+    const p = el.createEl('p', { cls: 'hv-quote-text', text: `${today.quote.text} ` });
+    p.createSpan({ cls: 'hv-quote-by', text: `— ${today.quote.by}` });
+    // Ask for more before the list runs dry, once a day.
+    if (today.left <= 14 && this.plugin.warnedDay !== this.day) {
+      this.plugin.warnedDay = this.day;
+      new Notice(`Home View: ${today.left} daily quote${today.left === 1 ? '' : 's'} left in main.js.`);
+    }
+  }
+
   show(ms) {
     if (this.anim) cancelAnimationFrame(this.anim);
     this.anim = 0;
@@ -280,6 +488,7 @@ class HomeView extends MarkdownRenderChild {
       // Without a location the sky assumes a 6:30 sunrise and a 19:30 sunset.
       this.sun = sun ?? { rise: 390, set: 1170 };
       if (this.itemsEl.childElementCount) { this.renderItems(); this.loadReminders(); this.loadEvents(); }
+      this.renderQuote(d);
     }
     const remaining = Math.min(Math.max((this.bed - now) / (this.bed - this.wake), 0), 1);
     this.paint(now);
@@ -288,9 +497,10 @@ class HomeView extends MarkdownRenderChild {
     const part = h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 18 ? 'afternoon' : 'evening';
     // The name is its own span so a narrow pane can put it on the second line.
     this.greetEl.empty();
-    if (this.opts.name) {
+    const name = this.opts.name === 'random' ? dailyName(this.day) : this.opts.name;
+    if (name) {
       this.greetEl.appendText(`Good ${part}, `);
-      this.greetEl.createSpan({ cls: 'hv-name', text: `${this.opts.name}.` });
+      this.greetEl.createSpan({ cls: 'hv-name', text: `${name}.` });
     } else {
       this.greetEl.setText(`Good ${part}.`);
     }
@@ -317,7 +527,6 @@ class HomeView extends MarkdownRenderChild {
       s.appendText(' by now.');
     }
 
-    this.setClock(d);
     this.setRing(mode, remaining);
     this.renderEvent(d);
   }
@@ -358,27 +567,6 @@ class HomeView extends MarkdownRenderChild {
     el.appendText('.');
   }
 
-  // A bare analog clock: an outline, four quiet marks, two hands, a dot.
-  buildClock(el) {
-    const marks = [0, 90, 180, 270]
-      .map((deg) => `<line class="hv-tick" x1="50" y1="9" x2="50" y2="14" transform="rotate(${deg} 50 50)"/>`)
-      .join('');
-    el.innerHTML = `<svg viewBox="0 0 100 100"><circle class="hv-face" cx="50" cy="50" r="46"/>${marks}`
-      + '<line class="hv-hand hv-hand-h" x1="50" y1="50" x2="50" y2="29"/>'
-      + '<line class="hv-hand hv-hand-m" x1="50" y1="50" x2="50" y2="15"/>'
-      + '<circle class="hv-pin" cx="50" cy="50" r="2.5"/></svg>';
-    this.hourHand = el.querySelector('.hv-hand-h');
-    this.minuteHand = el.querySelector('.hv-hand-m');
-    this.clockEl = el;
-  }
-
-  setClock(d) {
-    const m = d.getMinutes() + d.getSeconds() / 60 + d.getMilliseconds() / MIN;
-    this.hourHand.setAttribute('transform', `rotate(${(d.getHours() % 12) * 30 + m / 2} 50 50)`);
-    this.minuteHand.setAttribute('transform', `rotate(${m * 6} 50 50)`);
-    this.clockEl.setAttr('aria-label', `Clock showing ${pad(d.getHours())}:${pad(d.getMinutes())}`);
-  }
-
   // DayTime's ring: the percent of the waking day left, 100 at wake-up and 1 just
   // before bed. Before wake-up it holds DayTime's sun, after bedtime its moon.
   buildRing(el) {
@@ -407,7 +595,8 @@ class HomeView extends MarkdownRenderChild {
     const label = this.ringLabel;
     label.empty();
     if (mode === 'day') {
-      label.createSpan({ cls: 'hv-ring-num', text: String(pct) });
+      label.createSpan({ cls: 'hv-ring-num', text: String(pct) })
+        .createSpan({ cls: 'hv-ring-pct', text: '%' });
       this.ringEl.setAttr('aria-label', `${pct}% of today left`);
     } else {
       setIcon(label, mode === 'dawn' ? 'sun' : 'moon');

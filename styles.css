@@ -29,104 +29,69 @@
   color: var(--text-normal);
 }
 
-/* Rhythm: greeting ⟶ 5 beats ⟶ stanza ⟶ 5 beats ⟶ items ⟶ 2 beats ⟶ list.
-   Inside the stanza the lines are spaced by line height alone.
+/* One column, every line on one left edge:
 
-   Narrow (phones, split panes): one column — greeting, stanza, the two dials in
-   a row, the items sentence, the list. The column is as wide as its text, so
-   the dials centre between the text's own left and right edges, and the
-   column itself is centred on the page.
+     Good evening, Name.
+     quote
+     — author
 
-   Wide: one grid for the whole widget. The left column holds the prose, sized
-   by the stanza; the right column holds what you look at — the dials, and below
-   them the items, sharing one left edge.
+     It is now 22:55.          ◯   ← the "now" block: the stanza and the
+     Today is Monday, …            ring as one unit, ring on the right
+     You have 5min left.
 
-     greet  greet
-     stanza dials
-     say    list
-     event  event                                                       */
+     You have 1 action item.
+     ○ item
+     Your next event is …
+
+   Rhythm: greeting ⟶ 2 beats ⟶ quote ⟶ 5 beats ⟶ now ⟶ 5 beats ⟶ items
+   ⟶ 2 beats ⟶ list ⟶ 5 beats ⟶ event. There is no breakpoint: on a pane too
+   narrow for the ring beside the stanza, the ring wraps below it, still
+   left-aligned. */
 .hv-layout {
-  /* The dials keep one size in both layouts. */
   --hv-dial: 92px;
   width: fit-content;
   max-width: 100%;
-  /* Stacked, the column sits in the middle of the page; its text stays left-aligned. */
+  /* The column sits in the middle of the page; its text stays left-aligned. */
   margin-inline: auto;
 }
 
-/* On a phone the column takes the full width, so the dials centre on the screen. */
+/* On a phone the column takes the full width. */
 .is-phone .hv-layout {
   width: auto;
   margin-inline: 0;
 }
 
-.hv-stanza {
-  margin-top: calc(var(--hv-beat) * 5);
+/* The day's quote: an epigraph under the greeting, quote and source in one colour and size. */
+.hv-quote {
+  margin-top: calc(var(--hv-beat) * 2);
+  max-width: 34em;
+  color: var(--text-muted);
 }
 
-.hv-greeting .hv-name {
-  display: block;
+.home-view .hv-quote-text {
+  line-height: 1.5;
+}
+
+
+/* The ring is the stanza's own height (92px against 99px), so centred they
+   read as one block. */
+.hv-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: calc(var(--hv-beat) * 5);
+  row-gap: calc(var(--hv-beat) * 3);
+  margin-top: calc(var(--hv-beat) * 5);
 }
 
 .hv-dials {
   display: flex;
-  justify-content: center;
-  gap: calc(var(--hv-beat) * 2);
-  margin-top: calc(var(--hv-beat) * 5);
 }
 
 .hv-items,
 .home-view .hv-event {
   margin-top: calc(var(--hv-beat) * 5);
 }
-
-@container (min-width: 600px) {
-  .hv-layout {
-    width: auto;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas: "greet greet" "stanza dials" "say list" "event event";
-    column-gap: calc(var(--hv-beat) * 7);
-  }
-
-  .hv-head,
-  .hv-items {
-    display: contents;
-  }
-
-  .hv-greeting { grid-area: greet; }
-  .hv-greeting .hv-name { display: inline; }
-  .hv-dials { justify-content: flex-start; }
-  .hv-stanza { grid-area: stanza; }
-  .hv-dials { grid-area: dials; align-self: center; }
-
-  .home-view .hv-say {
-    grid-area: say;
-    /* Wrap to the stanza's width instead of widening the column. */
-    width: 0;
-    min-width: 100%;
-  }
-
-  /* Nothing left: the sentence has the whole row. */
-  .home-view .hv-say:only-child {
-    grid-column: 1 / -1;
-    width: auto;
-  }
-
-  .home-view .hv-say,
-  .home-view .hv-layout .hv-list {
-    margin-top: calc(var(--hv-beat) * 5);
-  }
-
-  .home-view .hv-layout .hv-list {
-    grid-area: list;
-  }
-
-  .home-view .hv-event {
-    grid-area: event;
-  }
-}
-
 
 .hv-key {
   color: var(--hv-accent);
@@ -297,7 +262,7 @@
   }
 }
 
-/* ───── The two dials: same size, same outer edge, one quiet line weight ───── */
+/* ───── The ring ───── */
 
 .hv-dial {
   position: relative;
@@ -311,30 +276,6 @@
   width: 100%;
   height: 100%;
   overflow: visible;
-}
-
-.hv-face {
-  fill: none;
-  stroke: color-mix(in srgb, var(--text-normal) 16%, transparent);
-  stroke-width: 1.5;
-}
-
-.hv-tick {
-  stroke: color-mix(in srgb, var(--text-normal) 30%, transparent);
-  stroke-width: 2;
-  stroke-linecap: round;
-}
-
-.hv-hand {
-  stroke: var(--text-normal);
-  stroke-linecap: round;
-}
-
-.hv-hand-h { stroke-width: 3.5; }
-.hv-hand-m { stroke-width: 2; }
-
-.hv-pin {
-  fill: var(--hv-tint);
 }
 
 .hv-ring circle {
@@ -374,6 +315,13 @@
   letter-spacing: -0.02em;
 }
 
+
+/* The percent sign, smaller, sitting on the number's baseline. */
+.hv-ring-pct {
+  font-size: 0.5em;
+  margin-left: 0.06em;
+  opacity: 0.7;
+}
 
 .hv-ring-label svg {
   width: calc(var(--hv-dial) * 0.3);
@@ -449,9 +397,6 @@
   font-weight: 700;
 }
 
-.hv-sky .hv-face { stroke: rgb(255 255 255 / 0.45); }
-.hv-sky .hv-tick { stroke: rgb(255 255 255 / 0.6); }
-.hv-sky .hv-pin { fill: #fff; }
 .hv-sky .hv-ring-track { stroke: rgb(255 255 255 / 0.22); }
 .hv-sky .hv-ring-fill { stroke: #fff; }
 .hv-sky .hv-ring[data-mode] .hv-ring-label { color: #fff; }

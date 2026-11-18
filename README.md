@@ -17,7 +17,7 @@ An Obsidian code block for a home page that talks to you, in plain sentences:
 >
 > Your next event is **Office hours**, in **2h 15min**.
 
-Beside the text sit two dials: a small analog clock, and a ring showing the
+Beside the text sits a ring showing the
 percent of your waking day that is left. Behind it all, the pane takes the colour
 of the sky at this hour — navy and stars before dawn, rose at sunrise, blue at
 midday, gold before sunset, coral at sunset, violet at dusk — following the real
